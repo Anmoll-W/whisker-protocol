@@ -1,0 +1,8 @@
+# Ignore everything
+*
+
+# Except the plans directory
+!.gitignore
+!.claude/
+!.claude/plans/
+!.claude/plans/*.md
