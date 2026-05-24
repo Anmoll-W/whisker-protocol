@@ -1,8 +1,12 @@
-# Ignore everything
+# Ignore everything at root
 *
 
-# Except the plans directory
+# Unignore .gitignore itself
 !.gitignore
+
+# Unignore the .claude directory tree
+!.claude
 !.claude/
+!.claude/plans
 !.claude/plans/
 !.claude/plans/*.md
