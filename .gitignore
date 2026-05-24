@@ -1,12 +1,13 @@
-# Ignore everything at root
-*
-
-# Unignore .gitignore itself
-!.gitignore
-
-# Unignore the .claude directory tree
-!.claude
-!.claude/
-!.claude/plans
-!.claude/plans/
-!.claude/plans/*.md
+# Common home directory clutter to ignore
+Library/
+Downloads/
+Desktop/
+Documents/
+Movies/
+Music/
+Pictures/
+Applications/
+.Trash/
+node_modules/
+*.DS_Store
+Projects/
