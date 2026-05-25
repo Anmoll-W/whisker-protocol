@@ -5,6 +5,8 @@ import Phaser from 'phaser';
 import { TileMap, MAP_COLS, MAP_ROWS, TILE_SIZE } from '@/entities/TileMap';
 import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
+import { FoodItem } from '@/entities/FoodItem';
+import { ExitZone } from '@/entities/ExitZone';
 import { GuardState } from '@/types/guard-types';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
@@ -14,6 +16,8 @@ export class GameScene extends Phaser.Scene {
   private tileMap!: TileMap;
   private player!: Player;
   private guard!: Guard;
+  private foodItem!: FoodItem;
+  private exitZone!: ExitZone;
   private detectionDebugGfx!: Phaser.GameObjects.Graphics;
   private noiseDebugGfx!: Phaser.GameObjects.Graphics;
 
@@ -47,6 +51,14 @@ export class GameScene extends Phaser.Scene {
     this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
     this.add.existing(this.guard);
 
+    // Laddoo food item at tile (7,7) center
+    this.foodItem = new FoodItem(this, 7 * TILE_SIZE + TILE_SIZE / 2, 7 * TILE_SIZE + TILE_SIZE / 2);
+    this.add.existing(this.foodItem);
+
+    // Exit zone at tile (17,12) center — locked until food collected
+    this.exitZone = new ExitZone(this, 17 * TILE_SIZE + TILE_SIZE / 2, 12 * TILE_SIZE + TILE_SIZE / 2);
+    this.add.existing(this.exitZone);
+
     // Noise radius debug overlay — between tiles and entities (depth 15)
     this.noiseDebugGfx = this.add.graphics();
     this.noiseDebugGfx.setDepth(15);
@@ -65,6 +77,29 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
+
+    // ── Food collection ───────────────────────────────────────────────────────
+    if (!this.foodItem.collected) {
+      const dx = this.player.x - this.foodItem.x;
+      const dy = this.player.y - this.foodItem.y;
+      if (dx * dx + dy * dy < 18 * 18) {
+        this.foodItem.collect();
+        this.exitZone.unlock();
+        this.guard.playerCarryingFood = true;
+      }
+    }
+
+    // ── Win check ─────────────────────────────────────────────────────────────
+    if (this.exitZone.isUnlocked) {
+      const dx = this.player.x - this.exitZone.x;
+      const dy = this.player.y - this.exitZone.y;
+      if (dx * dx + dy * dy < 24 * 24) {
+        if (!this.scene.isActive('WinScene')) {
+          this.scene.pause();
+          this.scene.launch('WinScene');
+        }
+      }
+    }
 
     // ── Surface noise check ──────────────────────────────────────────────────
     const noiseEvent = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);

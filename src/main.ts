@@ -3,6 +3,7 @@ import { BootScene } from '@/scenes/BootScene';
 import { PreloadScene } from '@/scenes/PreloadScene';
 import { GameScene } from '@/scenes/GameScene';
 import { GameOverScene } from '@/scenes/GameOverScene';
+import { WinScene } from '@/scenes/WinScene';
 import { initRNG } from '@/systems/rng';
 
 // Initialize seeded RNG before game starts
@@ -15,7 +16,7 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 640,
   height: 480,
   backgroundColor: '#1a1a2e',
-  scene: [BootScene, PreloadScene, GameScene, GameOverScene],
+  scene: [BootScene, PreloadScene, GameScene, GameOverScene, WinScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
