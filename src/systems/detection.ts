@@ -101,13 +101,15 @@ function raycast(
 /**
  * Check whether the guard has line-of-sight to the player.
  *
- * Facing convention:
- *   facingX = 1  → facing right → facing angle = 0 radians
- *   facingX = -1 → facing left  → facing angle = Math.PI radians
+ * Facing convention (radians):
+ *   0       → facing right
+ *   π/2     → facing down
+ *   π/-π    → facing left
+ *   -π/2    → facing up
  */
 export function checkLineOfSight(
   guardPos: { x: number; y: number },
-  facingX: 1 | -1,
+  facingAngle: number,  // radians, 0=right, π/2=down, π=left, -π/2=up
   playerPos: { x: number; y: number },
   tileMap: TileMap,
   cone: ConeConfig,
@@ -118,9 +120,6 @@ export function checkLineOfSight(
 
   // Angle from guard to player in world-space radians
   const angleToPlayer = Math.atan2(dy, dx);
-
-  // Guard facing angle: right = 0, left = π
-  const facingAngle = facingX === 1 ? 0 : Math.PI;
 
   // Angular difference, normalised to [-π, π]
   const rawDiff = normalizeAngle(angleToPlayer - facingAngle);

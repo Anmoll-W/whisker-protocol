@@ -1,0 +1,13 @@
+{
+  "type": "billu_candidates",
+  "variants": [
+    "classic",
+    "chonk",
+    "sleek"
+  ],
+  "frame_size": [
+    24,
+    24
+  ],
+  "palette_locked": true
+}

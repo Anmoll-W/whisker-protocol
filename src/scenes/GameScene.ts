@@ -12,6 +12,8 @@ import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-rend
 import { computeNoise, canGuardHearNoise } from '@/systems/noise';
 
 export class GameScene extends Phaser.Scene {
+  private readonly DEBUG_OVERLAYS = false;
+
   private tileMap!: TileMap;
   private player!: Player;
   private guard!: Guard;
@@ -61,10 +63,12 @@ export class GameScene extends Phaser.Scene {
     // Noise radius debug overlay — between tiles and entities (depth 15)
     this.noiseDebugGfx = this.add.graphics();
     this.noiseDebugGfx.setDepth(15);
+    this.noiseDebugGfx.setVisible(this.DEBUG_OVERLAYS);
 
     // Detection cone debug overlay — drawn above all entities
     this.detectionDebugGfx = this.add.graphics();
     this.detectionDebugGfx.setDepth(20);
+    this.detectionDebugGfx.setVisible(this.DEBUG_OVERLAYS);
 
     // Listen for guard ALERTED event — launch GameOverScene overlay
     this.guard.on(Guard.EVENT_ALERTED, () => {
@@ -125,27 +129,31 @@ export class GameScene extends Phaser.Scene {
     this.guard.update(delta);
 
     // ── Noise radius debug overlay ───────────────────────────────────────────
-    this.noiseDebugGfx.clear();
-    renderNoiseDebug(
-      this.noiseDebugGfx,
-      this.player.x,
-      this.player.y,
-      this.player.noiseRadius,
-    );
+    if (this.DEBUG_OVERLAYS) {
+      this.noiseDebugGfx.clear();
+      renderNoiseDebug(
+        this.noiseDebugGfx,
+        this.player.x,
+        this.player.y,
+        this.player.noiseRadius,
+      );
+    }
 
     // ── Detection cone debug overlay ─────────────────────────────────────────
     // When food is carried the effective range is 20% larger — reflect that in the overlay.
-    const effectiveConeConfig = this.guard.playerCarryingFood
-      ? { ...DEFAULT_CONE_CONFIG, range: DEFAULT_CONE_CONFIG.range * 1.2 }
-      : DEFAULT_CONE_CONFIG;
-    this.detectionDebugGfx.clear();
-    renderDetectionDebug(
-      this.detectionDebugGfx,
-      this.guard.guardPosition,
-      this.guard.facing,
-      result,
-      effectiveConeConfig,
-    );
+    if (this.DEBUG_OVERLAYS) {
+      const effectiveConeConfig = this.guard.playerCarryingFood
+        ? { ...DEFAULT_CONE_CONFIG, range: DEFAULT_CONE_CONFIG.range * 1.2 }
+        : DEFAULT_CONE_CONFIG;
+      this.detectionDebugGfx.clear();
+      renderDetectionDebug(
+        this.detectionDebugGfx,
+        this.guard.guardPosition,
+        this.guard.facing,
+        result,
+        effectiveConeConfig,
+      );
+    }
   }
 
   getTileMap(): TileMap { return this.tileMap; }

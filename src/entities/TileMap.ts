@@ -20,12 +20,15 @@ export interface Tile {
 
 /** Per-tile detail data generated once via seeded RNG; stored here so render() is deterministic. */
 interface TileDetail {
-  // FLOOR_MARBLE: 2-3 vein line segments [[x1,y1,x2,y2], ...]
+  // FLOOR_MARBLE: 4-6 vein line segments [[x1,y1,x2,y2], ...]
   veins?: Array<[number, number, number, number]>;
   // FLOOR_CARPET: stipple dot offsets [[dx, dy], ...]
   stippleDots?: Array<[number, number]>;
-  // FLOOR_WATER: wavy highlight Y offsets [y0, y1, y2] (3 segments)
+  // FLOOR_WATER: two waves, each with 3 Y offsets [y0, y1, y2]
   waveOffsets?: [number, number, number];
+  waveOffsets2?: [number, number, number];
+  // FLOOR_TILE: subtle R-channel tint offset (-10 to +10)
+  tintOffset?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,9 +117,14 @@ export class TileMap {
         const detail: TileDetail = {};
 
         switch (tile.type) {
+          case TileType.FLOOR_TILE: {
+            // Subtle per-tile R tint offset: -10 to +10
+            detail.tintOffset = rng.between(-10, 10);
+            break;
+          }
           case TileType.FLOOR_MARBLE: {
-            // 2-3 random diagonal veins across the tile
-            const veinCount = rng.between(2, 3);
+            // 4-6 random diagonal veins across the tile (denser pattern)
+            const veinCount = rng.between(4, 6);
             detail.veins = [];
             for (let v = 0; v < veinCount; v++) {
               // start near top or left edge, end near bottom or right edge
@@ -129,8 +137,8 @@ export class TileMap {
             break;
           }
           case TileType.FLOOR_CARPET: {
-            // 4-6 stipple dots
-            const dotCount = rng.between(4, 6);
+            // 5-8 stipple dots
+            const dotCount = rng.between(5, 8);
             detail.stippleDots = [];
             for (let d = 0; d < dotCount; d++) {
               detail.stippleDots.push([
@@ -141,12 +149,18 @@ export class TileMap {
             break;
           }
           case TileType.FLOOR_WATER: {
-            // 3 Y offsets for the wave segments (relative to tile center)
-            const midY = TILE_SIZE / 2;
+            // Two waves, each with 3 Y offsets (relative to tile)
+            const q1 = Math.floor(TILE_SIZE / 3);
+            const q2 = Math.floor((TILE_SIZE * 2) / 3);
             detail.waveOffsets = [
-              midY + rng.between(-3, 3),
-              midY + rng.between(-3, 3),
-              midY + rng.between(-3, 3),
+              q1 + rng.between(-3, 3),
+              q1 + rng.between(-3, 3),
+              q1 + rng.between(-3, 3),
+            ];
+            detail.waveOffsets2 = [
+              q2 + rng.between(-3, 3),
+              q2 + rng.between(-3, 3),
+              q2 + rng.between(-3, 3),
             ];
             break;
           }
@@ -173,53 +187,63 @@ export class TileMap {
 
         switch (tile.type) {
           // ----------------------------------------------------------------
-          // WALL — dark charcoal with inner border and top highlight
+          // WALL — warm dark brown (chawl walls, not gray)
           // ----------------------------------------------------------------
           case TileType.WALL: {
-            // Base fill
-            g.fillStyle(0x1a1a1a, 1);
+            // Base fill — warm dark brown
+            g.fillStyle(0x3a2410, 1);
             g.fillRect(x, y, S, S);
-            // Inner lighter border (2px inset)
-            g.lineStyle(2, 0x2a2a2a, 1);
+            // Inner border
+            g.lineStyle(2, 0x4a3018, 1);
             g.strokeRect(x + 1, y + 1, S - 2, S - 2);
             // Top edge highlight
-            g.lineStyle(1, 0x333333, 1);
+            g.lineStyle(1, 0x5a3a20, 1);
             g.beginPath();
             g.moveTo(x, y);
             g.lineTo(x + S, y);
+            g.strokePath();
+            // Bottom shadow
+            g.lineStyle(1, 0x1e1008, 1);
+            g.beginPath();
+            g.moveTo(x, y + S - 1);
+            g.lineTo(x + S, y + S - 1);
             g.strokePath();
             break;
           }
 
           // ----------------------------------------------------------------
-          // FLOOR_TILE — warm terracotta-cream with grout lines
+          // FLOOR_TILE — warm terracotta with subtle per-tile tint variation
           // ----------------------------------------------------------------
           case TileType.FLOOR_TILE: {
-            // Base fill
-            g.fillStyle(0xd4b896, 1);
+            // Compute per-tile tint: base R=0xD4, G=0x95, B=0x6A, shift R by tintOffset
+            const tint = detail.tintOffset ?? 0;
+            const r = Math.min(255, Math.max(0, 0xD4 + tint));
+            // Pack back to hex
+            const baseColor = (r << 16) | (0x95 << 8) | 0x6A;
+            g.fillStyle(baseColor, 1);
             g.fillRect(x, y, S, S);
-            // Grout lines at tile edges
-            g.lineStyle(1, 0xb89878, 1);
+            // Grout lines — subtle alpha, not dominant
+            g.lineStyle(1, 0xb87850, 0.3);
             g.strokeRect(x, y, S, S);
-            // Corner shadows (4×4px at each corner)
-            g.fillStyle(0xc4a886, 1);
-            g.fillRect(x, y, 4, 4);
-            g.fillRect(x + S - 4, y, 4, 4);
-            g.fillRect(x, y + S - 4, 4, 4);
-            g.fillRect(x + S - 4, y + S - 4, 4, 4);
+            // Corner accent dots
+            g.fillStyle(0xc07848, 0.5);
+            g.fillRect(x, y, 3, 3);
+            g.fillRect(x + S - 3, y, 3, 3);
+            g.fillRect(x, y + S - 3, 3, 3);
+            g.fillRect(x + S - 3, y + S - 3, 3, 3);
             break;
           }
 
           // ----------------------------------------------------------------
-          // FLOOR_MARBLE — cool white with seeded diagonal veins
+          // FLOOR_MARBLE — warm cream/ivory with warm beige veins
           // ----------------------------------------------------------------
           case TileType.FLOOR_MARBLE: {
-            // Base fill
-            g.fillStyle(0xdde8ee, 1);
+            // Base fill — cream/ivory (not cold blue-white)
+            g.fillStyle(0xe8d5c0, 1);
             g.fillRect(x, y, S, S);
-            // Veins
+            // Warm beige veins (denser)
             if (detail.veins) {
-              g.lineStyle(1, 0xb8ccd8, 1);
+              g.lineStyle(1, 0xc8b090, 1);
               for (const [x1, y1, x2, y2] of detail.veins) {
                 g.beginPath();
                 g.moveTo(x1, y1);
@@ -228,24 +252,27 @@ export class TileMap {
               }
             }
             // Top-left highlight dot
-            g.fillStyle(0xf0f5f8, 1);
+            g.fillStyle(0xf5ede0, 1);
             g.fillRect(x + 2, y + 2, 2, 2);
             break;
           }
 
           // ----------------------------------------------------------------
-          // FLOOR_CARPET — deep rust with stipple and inset border
+          // FLOOR_CARPET — deep red-brown with stipple and inner border
           // ----------------------------------------------------------------
           case TileType.FLOOR_CARPET: {
-            // Base fill
-            g.fillStyle(0x7a4a28, 1);
+            // Base fill — deeper red-brown
+            g.fillStyle(0x8b3a22, 1);
             g.fillRect(x, y, S, S);
-            // Inset border
-            g.lineStyle(1, 0x5a3018, 1);
-            g.strokeRect(x + 1, y + 1, S - 2, S - 2);
-            // Stipple dots
+            // Thin inner border pattern
+            g.lineStyle(1, 0x6b2a12, 1);
+            g.strokeRect(x + 2, y + 2, S - 4, S - 4);
+            // Outer edge darker
+            g.lineStyle(1, 0x5a2010, 0.6);
+            g.strokeRect(x, y, S, S);
+            // Stipple dots — visible contrast
             if (detail.stippleDots) {
-              g.fillStyle(0x9a6a48, 1);
+              g.fillStyle(0xaa5533, 1);
               for (const [dx, dy] of detail.stippleDots) {
                 g.fillRect(x + dx, y + dy, 1, 1);
               }
@@ -254,17 +281,29 @@ export class TileMap {
           }
 
           // ----------------------------------------------------------------
-          // FLOOR_WATER — deep blue with wavy highlight and specular dot
+          // FLOOR_WATER — slightly brighter blue with 2 wave lines
           // ----------------------------------------------------------------
           case TileType.FLOOR_WATER: {
-            // Base fill at 0.85 alpha
-            g.fillStyle(0x1e6fa8, 0.85);
+            // Base fill
+            g.fillStyle(0x2a85c0, 0.85);
             g.fillRect(x, y, S, S);
-            // Wavy highlight — 3 short segments at slightly different Y offsets
+            // Wave 1
             if (detail.waveOffsets) {
               const [y0, y1, y2] = detail.waveOffsets;
               const segW = Math.floor(S / 3);
-              g.lineStyle(1, 0x4a9eed, 0.6);
+              g.lineStyle(1, 0x4aaae0, 0.7);
+              g.beginPath();
+              g.moveTo(x, y + y0);
+              g.lineTo(x + segW, y + y1);
+              g.lineTo(x + segW * 2, y + y2);
+              g.lineTo(x + S, y + y0);
+              g.strokePath();
+            }
+            // Wave 2
+            if (detail.waveOffsets2) {
+              const [y0, y1, y2] = detail.waveOffsets2;
+              const segW = Math.floor(S / 3);
+              g.lineStyle(1, 0x4aaae0, 0.5);
               g.beginPath();
               g.moveTo(x, y + y0);
               g.lineTo(x + segW, y + y1);
@@ -273,30 +312,46 @@ export class TileMap {
               g.strokePath();
             }
             // Specular dot near center
-            g.fillStyle(0xa8d8f8, 1);
+            g.fillStyle(0x90d0f0, 1);
             g.fillRect(x + Math.floor(S / 2) - 1, y + Math.floor(S / 2) - 1, 2, 2);
             break;
           }
 
           // ----------------------------------------------------------------
-          // FURNITURE — very dark brown with 3D box illusion
+          // FURNITURE — warmer wood with top face + front face 3D crate look
           // ----------------------------------------------------------------
           case TileType.FURNITURE: {
-            // Base fill
-            g.fillStyle(0x3d2010, 1);
-            g.fillRect(x, y, S, S);
-            // Top face highlight strip (counter surface)
-            g.fillStyle(0x5a3018, 1);
-            g.fillRect(x, y, S, 3);
+            const topH = 6; // height of visible top face
+            // Front face (main body below top face)
+            g.fillStyle(0x5c3418, 1);
+            g.fillRect(x, y + topH, S, S - topH);
+            // Top face — lighter, angled look
+            g.fillStyle(0x7a5030, 1);
+            g.fillRect(x, y, S, topH);
+            // Dividing line between top and front
+            g.lineStyle(1, 0x3a1e08, 1);
+            g.beginPath();
+            g.moveTo(x, y + topH);
+            g.lineTo(x + S, y + topH);
+            g.strokePath();
             // Right face shadow strip
-            g.fillStyle(0x2a1508, 1);
-            g.fillRect(x + S - 2, y + 3, 2, S - 3);
+            g.fillStyle(0x3a1e08, 1);
+            g.fillRect(x + S - 3, y + topH, 3, S - topH);
+            // Left edge slight highlight
+            g.lineStyle(1, 0x7a5030, 0.5);
+            g.beginPath();
+            g.moveTo(x, y + topH);
+            g.lineTo(x, y + S);
+            g.strokePath();
             // Ground shadow along bottom
-            g.lineStyle(1, 0x1a0a04, 1);
+            g.lineStyle(1, 0x1e0c04, 1);
             g.beginPath();
             g.moveTo(x, y + S - 1);
             g.lineTo(x + S, y + S - 1);
             g.strokePath();
+            // Outer border
+            g.lineStyle(1, 0x2a1008, 0.8);
+            g.strokeRect(x, y, S, S);
             break;
           }
         }

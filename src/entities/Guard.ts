@@ -36,6 +36,7 @@ export class Guard extends Phaser.GameObjects.Container {
   private waypointIndex: number = 1;
   private _state: GuardState = GuardState.PATROL;
   private facingX: 1 | -1 = 1;
+  private facingY: number = 0;
   private idleTimer: number = 0;
 
   /** Detection time accumulators (milliseconds). */
@@ -104,6 +105,11 @@ export class Guard extends Phaser.GameObjects.Container {
 
   get facing(): 1 | -1 {
     return this.facingX;
+  }
+
+  /** Facing direction as radians: 0=right, π/2=down, π=left, -π/2=up */
+  get facingAngle(): number {
+    return Math.atan2(this.facingY, this.facingX);
   }
 
   get guardState(): GuardState {
@@ -331,10 +337,11 @@ export class Guard extends Phaser.GameObjects.Container {
     this.x += nx * this.cfg.patrolSpeed * dt;
     this.y += ny * this.cfg.patrolSpeed * dt;
 
-    // Update facing from horizontal movement
-    if (nx > 0) this.facingX = 1;
-    else if (nx < 0) this.facingX = -1;
-    // If purely vertical movement, hold last facing
+    // Update facing — track both axes for 4-way cone direction
+    if (Math.abs(nx) > 0.001 || Math.abs(ny) > 0.001) {
+      this.facingX = nx >= 0 ? 1 : -1;
+      this.facingY = ny;
+    }
   }
 
   // ── Idle tick ────────────────────────────────────────────────────────────────
@@ -374,8 +381,11 @@ export class Guard extends Phaser.GameObjects.Container {
         this.x += nx * SEARCH_SPEED * dt;
         this.y += ny * SEARCH_SPEED * dt;
 
-        if (nx > 0) this.facingX = 1;
-        else if (nx < 0) this.facingX = -1;
+        // Update facing — track both axes for 4-way cone direction
+        if (Math.abs(nx) > 0.001 || Math.abs(ny) > 0.001) {
+          this.facingX = nx >= 0 ? 1 : -1;
+          this.facingY = ny;
+        }
       }
     } else {
       // At last known position — countdown and pivot
