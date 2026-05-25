@@ -413,7 +413,7 @@ export class Guard extends Phaser.GameObjects.Container {
     switch (this._state) {
       case GuardState.PATROL:
       case GuardState.IDLE:
-        this.drawNormal(g);
+        this.drawNormal(g, 0x1A3A8A);
         break;
       case GuardState.SUSPICIOUS:
         this.drawSuspicious(g);
@@ -422,110 +422,113 @@ export class Guard extends Phaser.GameObjects.Container {
         this.drawAlerted(g);
         break;
       case GuardState.SEARCHING:
-        // SEARCHING renders same as PATROL for now — distinct visual is a stretch goal
-        this.drawNormal(g);
+        this.drawNormal(g, 0xAA4400);
         break;
     }
   }
 
   /**
-   * PATROL / IDLE state — nosy chawl neighbor in dark blue kurta.
-   * All coordinates are right-facing; scaleX handles left-facing mirroring.
-   * @param bodyColor Optional override for the body and arm color (default 0x2244aa — dark blue)
+   * Core draw routine — Chawl Uncle in kurta.
+   * Size: ~28px wide, ~44px tall (including head). Origin at container center.
+   * All coordinates are right-facing; g.scaleX handles left-facing mirroring.
+   *
+   * @param g         Graphics object to draw into
+   * @param bodyColor Kurta fill color (parameterized for state-based tinting)
    */
-  private drawNormal(g: Phaser.GameObjects.Graphics, bodyColor: number = 0x2244aa): void {
-    // ── Legs ── two dark navy rects below body, side by side
-    g.fillStyle(0x1a3070, 1);
-    const legW = 3; const legH = 8;
-    g.fillRect(-4, 7, legW, legH);   // left leg
-    g.fillRect(1,  7, legW, legH);   // right leg
+  private drawNormal(g: Phaser.GameObjects.Graphics, bodyColor: number = 0x1A3A8A): void {
+    // ── Ground shadow ──
+    g.fillStyle(0x000000, 0.2);
+    g.fillEllipse(0, 20, 30, 8);
 
-    // ── Feet ── two small dark dots below legs
-    g.fillStyle(0x1a0a04, 1);
-    g.fillRect(-4, 7 + legH, 3, 2);  // left foot
-    g.fillRect(1,  7 + legH, 3, 2);  // right foot
+    // ── Legs — two dark trouser legs ──
+    g.fillStyle(0x1A2A50, 1);
+    g.fillRoundedRect(-10, 14, 9, 18, 3);   // left leg
+    g.fillRoundedRect(2,   14, 9, 18, 3);   // right leg
 
-    // ── Body ── kurta-like rounded rect 10×14, centered (color parameterized)
+    // ── Kurta body — outline then fill ──
+    g.fillStyle(0x102870, 1);
+    g.fillRoundedRect(-14, -12, 30, 30, 4);  // dark outline
     g.fillStyle(bodyColor, 1);
-    g.fillRoundedRect(-5, -7, 10, 14, 2);
+    g.fillRoundedRect(-13, -11, 28, 28, 3);  // fill
 
-    // ── Arms ── two rects angled slightly out from body sides (color parameterized)
+    // ── Kurta V-collar ──
+    g.fillStyle(0xFFFFFF, 0.6);
+    g.fillTriangle(0, -11, -4, -3, 4, -3);
+
+    // ── Kurta button strip (center seam) ──
+    g.fillStyle(0x102870, 1);
+    g.fillRect(-1, -8, 2, 20);
+
+    // ── Arms ──
     g.fillStyle(bodyColor, 1);
-    g.fillRect(-8, -5, 3, 7);   // left arm (angled out to the left)
-    g.fillRect(5,  -4, 3, 7);   // right arm (angled out to the right)
+    g.fillRoundedRect(-16, -8, 6, 20, 3);   // left arm
+    g.fillRoundedRect(12,  -8, 6, 20, 3);   // right arm
 
-    // ── Head ── light brown circle, 9px diameter (4.5px radius), above body
-    g.fillStyle(0xc8956c, 1);
-    g.fillCircle(0, -12, 4);
+    // ── Hands ──
+    g.fillStyle(0xC8926A, 1);
+    g.fillCircle(-13, 13, 5);  // left hand
+    g.fillCircle(15,  13, 5);  // right hand
 
-    // ── Hair ── small dark semicircle on top of head
-    g.fillStyle(0x1a0a04, 1);
-    // Draw as a half-circle arc fill: fillTriangle approximation for a semicircle cap
-    // Use fillRect + fillCircle overlap trick: a rect covering the top half is cropped by
-    // the head circle, so instead draw a smaller filled circle at the very top.
-    g.fillCircle(0, -16, 3);
+    // ── Head — outline then skin fill ──
+    g.fillStyle(0x331100, 1);
+    g.fillCircle(0, -26, 13);  // dark outline ring
+    g.fillStyle(0xC8926A, 1);
+    g.fillCircle(0, -26, 12);  // skin
 
-    // ── Eyes ── two 2×2px dark dots on the head
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(-2, -13, 2, 2);  // left eye
-    g.fillRect(1,  -13, 2, 2);  // right eye
+    // ── Hair — dark cap on top of head ──
+    g.fillStyle(0x1A1008, 1);
+    g.fillEllipse(0, -36, 22, 10);
+
+    // ── Ears ──
+    g.fillStyle(0xA87050, 1);
+    g.fillCircle(-13, -26, 4);  // left ear
+    g.fillCircle(13,  -26, 4);  // right ear
+
+    // ── Eyes with highlight ──
+    g.fillStyle(0x1A1A1A, 1);
+    g.fillCircle(-5, -27, 3);   // left eye
+    g.fillCircle(5,  -27, 3);   // right eye
+    g.fillStyle(0xFFFFFF, 1);
+    g.fillCircle(-4, -28, 1);   // left eye highlight
+    g.fillCircle(6,  -28, 1);   // right eye highlight
+
+    // ── Mustache ──
+    g.fillStyle(0x1A1008, 1);
+    g.fillEllipse(-4, -22, 8, 3);  // left half
+    g.fillEllipse(4,  -22, 8, 3);  // right half
   }
 
   /**
-   * SUSPICIOUS state — same as normal + yellow '?' above head.
+   * SUSPICIOUS state — yellow-tinted kurta + '?' above head.
    * All coordinates right-facing; scaleX handles mirroring.
    */
   private drawSuspicious(g: Phaser.GameObjects.Graphics): void {
-    this.drawNormal(g);
-    // Yellow question mark drawn as simple lines above head
-    this.drawQuestionMark(g, 0, -24, 0xf5c842);
+    this.drawNormal(g, 0x998800);
+
+    // '?' marker above head — built from filled rects
+    const color = 0xF5C842;
+    g.fillStyle(color, 1);
+    // Top arc of '?': two horizontal bars + right vertical + curve-down
+    g.fillRect(-3, -54, 8, 3);   // top bar
+    g.fillRect(5,  -54, 3, 6);   // right drop
+    g.fillRect(-1, -48, 6, 3);   // mid-curve connector
+    g.fillRect(-1, -45, 3, 5);   // stem
+    // Dot
+    g.fillRect(-1, -37, 3, 3);
   }
 
   /**
-   * ALERTED state — red-tinted body + '!' above head.
+   * ALERTED state — red kurta + double '!' above head.
    * All coordinates right-facing; scaleX handles mirroring.
    */
   private drawAlerted(g: Phaser.GameObjects.Graphics): void {
-    this.drawNormal(g, 0xaa2222);
-    // ── Exclamation mark above head ──
-    this.drawExclamationMark(g, 0, -24, 0xff4444);
-  }
+    this.drawNormal(g, 0xAA2222);
 
-  /** Draw a '?' using line segments. cx/cy = center of the symbol. */
-  private drawQuestionMark(
-    g: Phaser.GameObjects.Graphics,
-    cx: number,
-    cy: number,
-    color: number,
-  ): void {
-    g.lineStyle(2, color, 1);
-    // Top arc of '?' — two short lines forming an arc approximation
-    g.beginPath();
-    g.moveTo(cx - 2, cy - 3);
-    g.lineTo(cx + 2, cy - 3);
-    g.lineTo(cx + 2, cy);
-    g.lineTo(cx,     cy + 1);
-    g.strokePath();
-    // Dot below stem
-    g.fillStyle(color, 1);
-    g.fillRect(cx - 1, cy + 3, 2, 2);
-  }
-
-  /** Draw an '!' using line segments. cx/cy = center of the symbol. */
-  private drawExclamationMark(
-    g: Phaser.GameObjects.Graphics,
-    cx: number,
-    cy: number,
-    color: number,
-  ): void {
-    g.lineStyle(2, color, 1);
-    // Vertical stem
-    g.beginPath();
-    g.moveTo(cx, cy - 4);
-    g.lineTo(cx, cy + 1);
-    g.strokePath();
-    // Dot
-    g.fillStyle(color, 1);
-    g.fillRect(cx - 1, cy + 3, 2, 2);
+    // Double exclamation marks above head
+    g.fillStyle(0xFF4400, 1);
+    g.fillRect(6,  -50, 3, 10);  // "!" mark 1 body
+    g.fillRect(6,  -38, 3, 3);   // "!" mark 1 dot
+    g.fillRect(12, -50, 3, 10);  // "!" mark 2 body
+    g.fillRect(12, -38, 3, 3);   // "!" mark 2 dot
   }
 }
