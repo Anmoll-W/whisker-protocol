@@ -55,9 +55,10 @@ export class GameScene extends Phaser.Scene {
     this.detectionDebugGfx = this.add.graphics();
     this.detectionDebugGfx.setDepth(20);
 
-    // Listen for guard ALERTED event — T7 will wire up game over here
+    // Listen for guard ALERTED event — launch GameOverScene overlay
     this.guard.on(Guard.EVENT_ALERTED, () => {
-      console.log('Guard alerted! TODO: trigger game over in T7');
+      this.scene.pause();
+      this.scene.launch('GameOverScene');
     });
   }
 
