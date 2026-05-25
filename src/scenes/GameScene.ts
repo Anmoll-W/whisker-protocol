@@ -56,7 +56,6 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
-    this.guard.update(delta);
 
     // ── Detection cone check ─────────────────────────────────────────────────
     const result = checkLineOfSight(
@@ -67,8 +66,10 @@ export class GameScene extends Phaser.Scene {
       DEFAULT_CONE_CONFIG,
     );
 
-    // Update guard timers and trigger state transitions
+    // Detection determines state this frame
     this.guard.updateDetection(result, delta, { x: this.player.x, y: this.player.y });
+    // Then move in the state just set
+    this.guard.update(delta);
 
     // Redraw debug overlay
     this.detectionDebugGfx.clear();

@@ -70,6 +70,9 @@ export class Guard extends Phaser.GameObjects.Container {
   private lastDrawnState: GuardState | null = null;
   private lastDrawnFacing: 1 | -1 | null = null;
 
+  /** Track whether EVENT_ALERTED has already fired for the current alert cycle. */
+  private _alertedEventFired: boolean = false;
+
   /** Event key emitted when the guard enters ALERTED state. */
   static readonly EVENT_ALERTED = 'guard:alerted';
 
@@ -195,7 +198,8 @@ export class Guard extends Phaser.GameObjects.Container {
       }
 
       // ALERTED: player still in LOS — guard stays alerted, no progression
-      // (no action needed — state remains ALERTED)
+      // Cap mainConeTime to prevent unbounded accumulation
+      this._mainConeTime = Math.min(this._mainConeTime, SUSPICIOUS_TO_ALERTED_MS);
       return;
     }
 
@@ -273,7 +277,10 @@ export class Guard extends Phaser.GameObjects.Container {
   private _enterAlerted(): void {
     this._mainConeTime = SUSPICIOUS_TO_ALERTED_MS; // clamp — don't let it go negative on reentry
     this.setGuardState(GuardState.ALERTED);
-    this.emit(Guard.EVENT_ALERTED, this);
+    if (!this._alertedEventFired) {
+      this._alertedEventFired = true;
+      this.emit(Guard.EVENT_ALERTED, this);
+    }
   }
 
   private _enterSearching(): void {
@@ -282,6 +289,7 @@ export class Guard extends Phaser.GameObjects.Container {
     this.searchReached = false;
     this._mainConeTime = 0;
     this._cooldownTimer = 0;
+    this._alertedEventFired = false;
     this.setGuardState(GuardState.SEARCHING);
   }
 
@@ -326,6 +334,7 @@ export class Guard extends Phaser.GameObjects.Container {
   }
 
   // ── Searching tick ───────────────────────────────────────────────────────────
+  // delta: raw ms (for timer accumulation); dt: seconds (= delta/1000, for movement math)
   private tickSearching(delta: number, dt: number): void {
     if (this.lastKnownPosition === null) {
       // No last known position — give up immediately
