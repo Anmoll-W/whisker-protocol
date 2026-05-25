@@ -39,7 +39,7 @@ export class GameScene extends Phaser.Scene {
       { x:  9 * TILE_SIZE + TILE_SIZE / 2, y:  3 * TILE_SIZE + TILE_SIZE / 2 },
     ];
     this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
-    this.add.existing(this.guard as unknown as Phaser.GameObjects.GameObject);
+    this.add.existing(this.guard);
   }
 
   update(_time: number, delta: number): void {

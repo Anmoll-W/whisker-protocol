@@ -15,7 +15,7 @@ export class Guard extends Phaser.GameObjects.Container {
   private gfx: Phaser.GameObjects.Graphics;
   private cfg: GuardConfig;
   private waypoints: Waypoint[];
-  private waypointIndex: number = 0;
+  private waypointIndex: number = 1;
   private _state: GuardState = GuardState.PATROL;
   private facingX: 1 | -1 = 1;
   private idleTimer: number = 0;
@@ -153,7 +153,8 @@ export class Guard extends Phaser.GameObjects.Container {
         this.drawAlerted(g);
         break;
       case GuardState.SEARCHING:
-        this.drawNormal(g); // same as normal for now
+        // TODO(T5): add distinct visual — currently renders same as PATROL
+        this.drawNormal(g);
         break;
     }
   }
@@ -161,8 +162,9 @@ export class Guard extends Phaser.GameObjects.Container {
   /**
    * PATROL / IDLE state — nosy chawl neighbor in dark blue kurta.
    * All coordinates are right-facing; scaleX handles left-facing mirroring.
+   * @param bodyColor Optional override for the body and arm color (default 0x2244aa — dark blue)
    */
-  private drawNormal(g: Phaser.GameObjects.Graphics): void {
+  private drawNormal(g: Phaser.GameObjects.Graphics, bodyColor: number = 0x2244aa): void {
     // ── Legs ── two dark navy rects below body, side by side
     g.fillStyle(0x1a3070, 1);
     const legW = 3; const legH = 8;
@@ -174,12 +176,12 @@ export class Guard extends Phaser.GameObjects.Container {
     g.fillRect(-4, 7 + legH, 3, 2);  // left foot
     g.fillRect(1,  7 + legH, 3, 2);  // right foot
 
-    // ── Body ── dark blue kurta-like rounded rect 10×14, centered
-    g.fillStyle(0x2244aa, 1);
+    // ── Body ── kurta-like rounded rect 10×14, centered (color parameterized)
+    g.fillStyle(bodyColor, 1);
     g.fillRoundedRect(-5, -7, 10, 14, 2);
 
-    // ── Arms ── two dark blue rects angled slightly out from body sides
-    g.fillStyle(0x2244aa, 1);
+    // ── Arms ── two rects angled slightly out from body sides (color parameterized)
+    g.fillStyle(bodyColor, 1);
     g.fillRect(-8, -5, 3, 7);   // left arm (angled out to the left)
     g.fillRect(5,  -4, 3, 7);   // right arm (angled out to the right)
 
@@ -215,39 +217,7 @@ export class Guard extends Phaser.GameObjects.Container {
    * All coordinates right-facing; scaleX handles mirroring.
    */
   private drawAlerted(g: Phaser.GameObjects.Graphics): void {
-    // ── Legs ──
-    g.fillStyle(0x1a3070, 1);
-    const legW = 3; const legH = 8;
-    g.fillRect(-4, 7, legW, legH);
-    g.fillRect(1,  7, legW, legH);
-
-    // ── Feet ──
-    g.fillStyle(0x1a0a04, 1);
-    g.fillRect(-4, 7 + legH, 3, 2);
-    g.fillRect(1,  7 + legH, 3, 2);
-
-    // ── Body ── red-tinted kurta
-    g.fillStyle(0xaa2222, 1);
-    g.fillRoundedRect(-5, -7, 10, 14, 2);
-
-    // ── Arms ──
-    g.fillStyle(0xaa2222, 1);
-    g.fillRect(-8, -5, 3, 7);
-    g.fillRect(5,  -4, 3, 7);
-
-    // ── Head ──
-    g.fillStyle(0xc8956c, 1);
-    g.fillCircle(0, -12, 4);
-
-    // ── Hair ──
-    g.fillStyle(0x1a0a04, 1);
-    g.fillCircle(0, -16, 3);
-
-    // ── Eyes ──
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(-2, -13, 2, 2);
-    g.fillRect(1,  -13, 2, 2);
-
+    this.drawNormal(g, 0xaa2222);
     // ── Exclamation mark above head ──
     this.drawExclamationMark(g, 0, -24, 0xff4444);
   }
