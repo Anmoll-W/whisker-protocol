@@ -4,10 +4,12 @@
 import Phaser from 'phaser';
 import { TileMap, MAP_COLS, MAP_ROWS, TILE_SIZE } from '@/entities/TileMap';
 import { Player } from '@/entities/Player';
+import { Guard } from '@/entities/Guard';
 
 export class GameScene extends Phaser.Scene {
   private tileMap!: TileMap;
   private player!: Player;
+  private guard!: Guard;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -28,10 +30,21 @@ export class GameScene extends Phaser.Scene {
     const startY = 7 * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, startX, startY, this.tileMap);
     this.add.existing(this.player);
+
+    // Guard patrols a path through the kitchen — tile centers
+    const guardWaypoints = [
+      { x: 14 * TILE_SIZE + TILE_SIZE / 2, y:  3 * TILE_SIZE + TILE_SIZE / 2 },
+      { x: 14 * TILE_SIZE + TILE_SIZE / 2, y: 10 * TILE_SIZE + TILE_SIZE / 2 },
+      { x:  9 * TILE_SIZE + TILE_SIZE / 2, y: 10 * TILE_SIZE + TILE_SIZE / 2 },
+      { x:  9 * TILE_SIZE + TILE_SIZE / 2, y:  3 * TILE_SIZE + TILE_SIZE / 2 },
+    ];
+    this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
+    this.add.existing(this.guard as unknown as Phaser.GameObjects.GameObject);
   }
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
+    this.guard.update(delta);
   }
 
   getTileMap(): TileMap { return this.tileMap; }
