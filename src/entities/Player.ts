@@ -403,6 +403,14 @@ export class Player extends Phaser.GameObjects.Container {
     g.strokePath();
   }
 
+  /**
+   * Noise radius in pixels — pre-computed for the noise debug visualizer.
+   * Equals 0 when the player is silent (FREEZE, standing still, or crouching in place).
+   */
+  get noiseRadius(): number {
+    return this.noiseLevel <= 0 ? 0 : 64 * this.noiseLevel;
+  }
+
   /** Return current player state — useful for HUD/debug overlays. */
   getState(): PlayerState { return this.playerState; }
 }

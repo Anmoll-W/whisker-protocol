@@ -5,14 +5,17 @@ import Phaser from 'phaser';
 import { TileMap, MAP_COLS, MAP_ROWS, TILE_SIZE } from '@/entities/TileMap';
 import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
+import { GuardState } from '@/types/guard-types';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
-import { renderDetectionDebug } from '@/systems/detection-renderer';
+import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
+import { computeNoise, canGuardHearNoise } from '@/systems/noise';
 
 export class GameScene extends Phaser.Scene {
   private tileMap!: TileMap;
   private player!: Player;
   private guard!: Guard;
   private detectionDebugGfx!: Phaser.GameObjects.Graphics;
+  private noiseDebugGfx!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -44,6 +47,10 @@ export class GameScene extends Phaser.Scene {
     this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
     this.add.existing(this.guard);
 
+    // Noise radius debug overlay — between tiles and entities (depth 15)
+    this.noiseDebugGfx = this.add.graphics();
+    this.noiseDebugGfx.setDepth(15);
+
     // Detection cone debug overlay — drawn above all entities
     this.detectionDebugGfx = this.add.graphics();
     this.detectionDebugGfx.setDepth(20);
@@ -56,6 +63,17 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
+
+    // ── Surface noise check ──────────────────────────────────────────────────
+    const noiseEvent = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);
+    if (noiseEvent !== null) {
+      const canHear = canGuardHearNoise(this.guard.guardPosition, noiseEvent);
+      if (canHear && this.guard.guardState === GuardState.PATROL) {
+        this.guard.setGuardState(GuardState.SUSPICIOUS);
+        this.guard.lastKnownPosition = { x: this.player.x, y: this.player.y };
+      }
+      // Guards already SUSPICIOUS, ALERTED, or SEARCHING are not downgraded by noise
+    }
 
     // ── Detection cone check ─────────────────────────────────────────────────
     const result = checkLineOfSight(
@@ -71,7 +89,16 @@ export class GameScene extends Phaser.Scene {
     // Then move in the state just set
     this.guard.update(delta);
 
-    // Redraw debug overlay
+    // ── Noise radius debug overlay ───────────────────────────────────────────
+    this.noiseDebugGfx.clear();
+    renderNoiseDebug(
+      this.noiseDebugGfx,
+      this.player.x,
+      this.player.y,
+      this.player.noiseRadius,
+    );
+
+    // ── Detection cone debug overlay ─────────────────────────────────────────
     this.detectionDebugGfx.clear();
     renderDetectionDebug(
       this.detectionDebugGfx,

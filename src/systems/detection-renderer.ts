@@ -1,6 +1,7 @@
-// detection-renderer.ts — Debug overlay for the line-of-sight detection cone
-// Draws the cone arcs, peripheral ring, and detection/blocked LOS lines.
-// Rendered each frame by GameScene into a Graphics object at depth 20.
+// detection-renderer.ts — Debug overlays for detection cone and noise radius.
+// Draws the cone arcs, peripheral ring, detection/blocked LOS lines,
+// and the player noise radius circle.
+// Rendered each frame by GameScene into Graphics objects.
 
 import Phaser from 'phaser';
 import { type ConeConfig, type DetectionResult } from '@/systems/detection';
@@ -111,4 +112,25 @@ export function renderDetectionDebug(
     gfx.fillStyle(dotColor, 1);
     gfx.fillCircle(hitPoint.x, hitPoint.y, 3);
   }
+}
+
+/**
+ * Render the noise radius debug overlay.
+ * Draws an orange dashed-look circle around the player when they are making noise.
+ *
+ * @param gfx         The Phaser Graphics object to draw into (cleared by caller each frame).
+ * @param playerX     Player world X.
+ * @param playerY     Player world Y.
+ * @param noiseRadius Player.noiseRadius — 0 means silent, skip drawing.
+ */
+export function renderNoiseDebug(
+  gfx: Phaser.GameObjects.Graphics,
+  playerX: number,
+  playerY: number,
+  noiseRadius: number,
+): void {
+  if (noiseRadius <= 0) return;
+
+  gfx.lineStyle(1, 0xff6600, 0.35);
+  gfx.strokeCircle(playerX, playerY, noiseRadius);
 }
