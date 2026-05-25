@@ -6,7 +6,7 @@ on:
 
 jobs:
   bundle-size:
-    name: Check bundle size < 15MB
+    name: Check bundle size < 2MB (YouTube Playables limit)
     runs-on: ubuntu-latest
 
     steps:
@@ -28,11 +28,11 @@ jobs:
       - name: Check bundle size
         run: |
           BUNDLE_SIZE=$(du -sb dist/ | cut -f1)
-          MAX_SIZE=15728640
+          MAX_SIZE=2097152
           echo "Bundle size: ${BUNDLE_SIZE} bytes"
-          echo "Max allowed: ${MAX_SIZE} bytes"
+          echo "Max allowed: ${MAX_SIZE} bytes (YouTube Playables 2MB limit)"
           if [ "$BUNDLE_SIZE" -gt "$MAX_SIZE" ]; then
-            echo "FAIL: Bundle size ${BUNDLE_SIZE} bytes exceeds 15MB limit (${MAX_SIZE} bytes)"
+            echo "FAIL: Bundle size ${BUNDLE_SIZE} bytes exceeds 2MB Playables limit (${MAX_SIZE} bytes)"
             exit 1
           fi
-          echo "PASS: Bundle size is within the 15MB limit"
+          echo "PASS: Bundle size is within the 2MB Playables limit"
