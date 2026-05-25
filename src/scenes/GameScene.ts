@@ -5,11 +5,14 @@ import Phaser from 'phaser';
 import { TileMap, MAP_COLS, MAP_ROWS, TILE_SIZE } from '@/entities/TileMap';
 import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
+import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
+import { renderDetectionDebug } from '@/systems/detection-renderer';
 
 export class GameScene extends Phaser.Scene {
   private tileMap!: TileMap;
   private player!: Player;
   private guard!: Guard;
+  private detectionDebugGfx!: Phaser.GameObjects.Graphics;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -40,11 +43,37 @@ export class GameScene extends Phaser.Scene {
     ];
     this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
     this.add.existing(this.guard);
+
+    // Detection cone debug overlay — drawn above all entities
+    this.detectionDebugGfx = this.add.graphics();
+    this.detectionDebugGfx.setDepth(20);
   }
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
     this.guard.update(delta);
+
+    // ── Detection cone check ─────────────────────────────────────────────────
+    const result = checkLineOfSight(
+      this.guard.guardPosition,
+      this.guard.facing,
+      { x: this.player.x, y: this.player.y },
+      this.tileMap,
+      DEFAULT_CONE_CONFIG,
+    );
+
+    // Update guard timers and trigger state transitions
+    this.guard.updateDetection(result, delta);
+
+    // Redraw debug overlay
+    this.detectionDebugGfx.clear();
+    renderDetectionDebug(
+      this.detectionDebugGfx,
+      this.guard.guardPosition,
+      this.guard.facing,
+      result,
+      DEFAULT_CONE_CONFIG,
+    );
   }
 
   getTileMap(): TileMap { return this.tileMap; }

@@ -5,6 +5,7 @@
 
 import Phaser from 'phaser';
 import { GuardState, DEFAULT_GUARD_CONFIG, type GuardConfig } from '@/types/guard-types';
+import { type DetectionResult } from '@/systems/detection';
 
 interface Waypoint {
   x: number;
@@ -19,6 +20,10 @@ export class Guard extends Phaser.GameObjects.Container {
   private _state: GuardState = GuardState.PATROL;
   private facingX: 1 | -1 = 1;
   private idleTimer: number = 0;
+
+  /** Detection time accumulators (milliseconds). Reset when player leaves the zone. */
+  private _mainConeTime: number = 0;
+  private _peripheralTime: number = 0;
 
   /** Track last drawn state + facing so we only redraw on change. */
   private lastDrawnState: GuardState | null = null;
@@ -62,6 +67,44 @@ export class Guard extends Phaser.GameObjects.Container {
     if (this._state !== s) {
       this._state = s;
       this.redraw();
+    }
+  }
+
+  /** Milliseconds the player has been continuously in the main cone with clear LOS. */
+  get mainConeTime(): number {
+    return this._mainConeTime;
+  }
+
+  /** Milliseconds the player has been continuously in the peripheral zone with clear LOS. */
+  get peripheralTime(): number {
+    return this._peripheralTime;
+  }
+
+  /**
+   * Update detection accumulators based on the latest DetectionResult.
+   * Called by GameScene each frame after checkLineOfSight().
+   * Minimal state transition: sets SUSPICIOUS when the player first enters the main cone.
+   * Full state machine (ALERTED, SEARCHING) is implemented in Task 5.
+   */
+  updateDetection(result: DetectionResult, delta: number): void {
+    if (result.inMainCone) {
+      this._mainConeTime += delta;
+      this._peripheralTime = 0; // main cone takes precedence — reset peripheral
+      if (this._mainConeTime > 0) {
+        this.setGuardState(GuardState.SUSPICIOUS);
+      }
+    } else if (result.inPeripheral) {
+      this._peripheralTime += delta;
+      this._mainConeTime = 0;
+    } else {
+      // Player has left both zones — reset both timers
+      this._mainConeTime = 0;
+      this._peripheralTime = 0;
+      // If guard was only SUSPICIOUS (not yet ALERTED), revert to PATROL / IDLE
+      if (this._state === GuardState.SUSPICIOUS) {
+        // Return to whichever movement state was active before; default to PATROL
+        this.setGuardState(GuardState.PATROL);
+      }
     }
   }
 
