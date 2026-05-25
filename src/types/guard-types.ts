@@ -3,9 +3,9 @@
 export enum GuardState {
   PATROL = 'PATROL',
   IDLE = 'IDLE',
-  SUSPICIOUS = 'SUSPICIOUS', // placeholder — Task 4
-  ALERTED = 'ALERTED',       // placeholder — Task 5
-  SEARCHING = 'SEARCHING',   // placeholder — Task 5
+  SUSPICIOUS = 'SUSPICIOUS',
+  ALERTED = 'ALERTED',
+  SEARCHING = 'SEARCHING',
 }
 
 export interface GuardConfig {
@@ -22,3 +22,14 @@ export const DEFAULT_GUARD_CONFIG: GuardConfig = {
   waypointReachThreshold: 4,
   idleDuration: 1800,
 };
+
+// ── Alert state machine thresholds ──────────────────────────────────────────
+
+/** Milliseconds continuously in main cone before SUSPICIOUS → ALERTED */
+export const SUSPICIOUS_TO_ALERTED_MS = 1500;
+
+/** Milliseconds out of ALL cones before SUSPICIOUS reverts → PATROL */
+export const SUSPICIOUS_COOLDOWN_MS = 500;
+
+/** Milliseconds SEARCHING before giving up and reverting → PATROL */
+export const SEARCH_DURATION_MS = 10000;

@@ -47,6 +47,11 @@ export class GameScene extends Phaser.Scene {
     // Detection cone debug overlay — drawn above all entities
     this.detectionDebugGfx = this.add.graphics();
     this.detectionDebugGfx.setDepth(20);
+
+    // Listen for guard ALERTED event — T7 will wire up game over here
+    this.guard.on(Guard.EVENT_ALERTED, () => {
+      console.log('Guard alerted! TODO: trigger game over in T7');
+    });
   }
 
   update(_time: number, delta: number): void {
@@ -63,7 +68,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Update guard timers and trigger state transitions
-    this.guard.updateDetection(result, delta);
+    this.guard.updateDetection(result, delta, { x: this.player.x, y: this.player.y });
 
     // Redraw debug overlay
     this.detectionDebugGfx.clear();

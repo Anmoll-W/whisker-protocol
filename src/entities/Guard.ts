@@ -4,8 +4,25 @@
 // All rendering is programmatic — no external sprites.
 
 import Phaser from 'phaser';
-import { GuardState, DEFAULT_GUARD_CONFIG, type GuardConfig } from '@/types/guard-types';
+import {
+  GuardState,
+  DEFAULT_GUARD_CONFIG,
+  type GuardConfig,
+  SUSPICIOUS_TO_ALERTED_MS,
+  SUSPICIOUS_COOLDOWN_MS,
+  SEARCH_DURATION_MS,
+} from '@/types/guard-types';
+import { DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { type DetectionResult } from '@/systems/detection';
+
+/** Search speed (px/s) — faster than normal patrol */
+const SEARCH_SPEED = 72;
+
+/** Distance threshold (px) to consider lastKnownPosition reached during SEARCHING */
+const SEARCH_REACH_THRESHOLD = 8;
+
+/** Milliseconds between facing-direction pivots during SEARCHING "look around" */
+const SEARCH_PIVOT_INTERVAL = 2000;
 
 interface Waypoint {
   x: number;
@@ -21,13 +38,40 @@ export class Guard extends Phaser.GameObjects.Container {
   private facingX: 1 | -1 = 1;
   private idleTimer: number = 0;
 
-  /** Detection time accumulators (milliseconds). Reset when player leaves the zone. */
+  /** Detection time accumulators (milliseconds). */
   private _mainConeTime: number = 0;
   private _peripheralTime: number = 0;
+
+  /** Time (ms) the player has been continuously OUT of all cones (for SUSPICIOUS cooldown). */
+  private _cooldownTimer: number = 0;
+
+  /** Waypoint index saved when entering SUSPICIOUS — restored on PATROL revert. */
+  private savedWaypointIndex: number = 0;
+
+  /** Last known player world position — set whenever player is in main cone. */
+  public lastKnownPosition: { x: number; y: number } | null = null;
+
+  /**
+   * Set from GameScene when T8 (food carry mechanic) lands.
+   * Increases effective detection range by 20% while true.
+   */
+  public playerCarryingFood: boolean = false;
+
+  /** Time (ms) spent searching after reaching lastKnownPosition. */
+  private searchTimer: number = 0;
+
+  /** Time (ms) accumulator for "look around" pivot while SEARCHING. */
+  private searchPivotTimer: number = 0;
+
+  /** Whether the guard has reached lastKnownPosition during SEARCHING. */
+  private searchReached: boolean = false;
 
   /** Track last drawn state + facing so we only redraw on change. */
   private lastDrawnState: GuardState | null = null;
   private lastDrawnFacing: 1 | -1 | null = null;
+
+  /** Event key emitted when the guard enters ALERTED state. */
+  static readonly EVENT_ALERTED = 'guard:alerted';
 
   constructor(
     scene: Phaser.Scene,
@@ -49,7 +93,7 @@ export class Guard extends Phaser.GameObjects.Container {
     this.redraw();
   }
 
-  // ── Public API (Task 4 will use these) ──────────────────────────────────────
+  // ── Public API ───────────────────────────────────────────────────────────────
 
   get guardPosition(): { x: number; y: number } {
     return { x: this.x, y: this.y };
@@ -81,30 +125,119 @@ export class Guard extends Phaser.GameObjects.Container {
   }
 
   /**
-   * Update detection accumulators based on the latest DetectionResult.
+   * Full alert state machine.
    * Called by GameScene each frame after checkLineOfSight().
-   * Minimal state transition: sets SUSPICIOUS when the player first enters the main cone.
-   * Full state machine (ALERTED, SEARCHING) is implemented in Task 5.
+   *
+   * State flow:
+   *   PATROL/IDLE → SUSPICIOUS → ALERTED → SEARCHING → PATROL
+   *
+   * @param result  Latest detection cone result from checkLineOfSight()
+   * @param delta   Frame delta in milliseconds
+   * @param playerPos  Current world position of the player
    */
-  updateDetection(result: DetectionResult, delta: number): void {
-    if (result.inMainCone) {
+  updateDetection(
+    result: DetectionResult,
+    delta: number,
+    playerPos: { x: number; y: number },
+  ): void {
+    // ── Food-carry modifier: expand effective main cone range ─────────────────
+    const effectiveMainRange = this.playerCarryingFood
+      ? DEFAULT_CONE_CONFIG.range * 1.2
+      : DEFAULT_CONE_CONFIG.range;
+
+    // Re-evaluate inMainCone using effective range (result.inMainCone already
+    // accounts for angle + LOS, but was computed with base range — extend here).
+    const inMain =
+      result.inMainCone ||
+      (result.distancePx <= effectiveMainRange &&
+        Math.abs(result.angleFromFacing) <= DEFAULT_CONE_CONFIG.halfAngle &&
+        !result.blockedByWall);
+
+    // ── Player is in main cone ────────────────────────────────────────────────
+    if (inMain) {
+      // Store last known position whenever we see the player
+      this.lastKnownPosition = { x: playerPos.x, y: playerPos.y };
+
       this._mainConeTime += delta;
-      this._peripheralTime = 0; // main cone takes precedence — reset peripheral
-      this.setGuardState(GuardState.SUSPICIOUS);
-    } else if (result.inPeripheral) {
-      this._peripheralTime += delta;
-      this._mainConeTime = 0;
-    } else {
-      // Player has left both zones — reset both timers
-      this._mainConeTime = 0;
       this._peripheralTime = 0;
-      // If guard was only SUSPICIOUS (not yet ALERTED), revert to PATROL / IDLE
-      if (this._state === GuardState.SUSPICIOUS) {
-        // T5: when building the full state machine, restore the current waypoint target
-        // on revert to PATROL — guard resumes from mid-path without snapping to last waypoint.
+      this._cooldownTimer = 0;
+
+      const cur = this._state;
+
+      // Transition: PATROL / IDLE / SUSPICIOUS → SUSPICIOUS (stop moving, face player)
+      if (
+        cur === GuardState.PATROL ||
+        cur === GuardState.IDLE ||
+        cur === GuardState.SUSPICIOUS
+      ) {
+        if (cur === GuardState.PATROL || cur === GuardState.IDLE) {
+          // Save waypoint so we can resume after the alert clears
+          this.savedWaypointIndex = this.waypointIndex;
+          // Face toward player
+          this.facingX = playerPos.x >= this.x ? 1 : -1;
+        }
+        this.setGuardState(GuardState.SUSPICIOUS);
+      }
+
+      // Transition: SUSPICIOUS → ALERTED (dwell time exceeded)
+      if (
+        this._state === GuardState.SUSPICIOUS &&
+        this._mainConeTime >= SUSPICIOUS_TO_ALERTED_MS
+      ) {
+        this._enterAlerted();
+        return; // no further transitions this frame
+      }
+
+      // Transition: SEARCHING → ALERTED (re-spotted while searching)
+      if (this._state === GuardState.SEARCHING) {
+        this._enterAlerted();
+        return;
+      }
+
+      // ALERTED: player still in LOS — guard stays alerted, no progression
+      // (no action needed — state remains ALERTED)
+      return;
+    }
+
+    // ── Player is NOT in main cone ────────────────────────────────────────────
+
+    if (result.inPeripheral) {
+      this._peripheralTime += delta;
+      // Peripheral detection does not drive SUSPICIOUS → don't reset mainConeTime
+    } else {
+      // Fully out of all cones
+      this._peripheralTime = 0;
+    }
+
+    // SUSPICIOUS cooldown
+    if (this._state === GuardState.SUSPICIOUS) {
+      this._cooldownTimer += delta;
+      if (this._cooldownTimer >= SUSPICIOUS_COOLDOWN_MS) {
+        // Cool down complete — revert to PATROL
+        this._mainConeTime = 0;
+        this._cooldownTimer = 0;
+        this.waypointIndex = this.savedWaypointIndex;
         this.setGuardState(GuardState.PATROL);
       }
+      return;
     }
+
+    // ALERTED → SEARCHING (player left LOS)
+    if (this._state === GuardState.ALERTED) {
+      this._enterSearching();
+      return;
+    }
+
+    // PATROL / IDLE — player out of cones, nothing to do
+    if (
+      this._state === GuardState.PATROL ||
+      this._state === GuardState.IDLE
+    ) {
+      this._mainConeTime = 0;
+      this._peripheralTime = 0;
+    }
+
+    // SEARCHING is handled in update() / tickSearching()
   }
 
   // ── Public update — called by GameScene.update() each frame ─────────────────
@@ -118,10 +251,14 @@ export class Guard extends Phaser.GameObjects.Container {
       case GuardState.IDLE:
         this.tickIdle(delta);
         break;
-      // Placeholder states — no behavior yet
       case GuardState.SUSPICIOUS:
+        // Guard stops and faces player — already handled in updateDetection
+        break;
       case GuardState.ALERTED:
+        // Guard freezes in place — no movement
+        break;
       case GuardState.SEARCHING:
+        this.tickSearching(delta, dt);
         break;
     }
 
@@ -129,6 +266,23 @@ export class Guard extends Phaser.GameObjects.Container {
     if (this._state !== this.lastDrawnState || this.facingX !== this.lastDrawnFacing) {
       this.redraw();
     }
+  }
+
+  // ── Private state entry helpers ──────────────────────────────────────────────
+
+  private _enterAlerted(): void {
+    this._mainConeTime = SUSPICIOUS_TO_ALERTED_MS; // clamp — don't let it go negative on reentry
+    this.setGuardState(GuardState.ALERTED);
+    this.emit(Guard.EVENT_ALERTED, this);
+  }
+
+  private _enterSearching(): void {
+    this.searchTimer = 0;
+    this.searchPivotTimer = 0;
+    this.searchReached = false;
+    this._mainConeTime = 0;
+    this._cooldownTimer = 0;
+    this.setGuardState(GuardState.SEARCHING);
   }
 
   // ── Patrol tick ──────────────────────────────────────────────────────────────
@@ -171,6 +325,56 @@ export class Guard extends Phaser.GameObjects.Container {
     }
   }
 
+  // ── Searching tick ───────────────────────────────────────────────────────────
+  private tickSearching(delta: number, dt: number): void {
+    if (this.lastKnownPosition === null) {
+      // No last known position — give up immediately
+      this.waypointIndex = this.savedWaypointIndex;
+      this.setGuardState(GuardState.PATROL);
+      return;
+    }
+
+    if (!this.searchReached) {
+      // Move toward last known position
+      const dx = this.lastKnownPosition.x - this.x;
+      const dy = this.lastKnownPosition.y - this.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist <= SEARCH_REACH_THRESHOLD) {
+        // Arrived — start the countdown
+        this.searchReached = true;
+        this.searchTimer = 0;
+        this.searchPivotTimer = 0;
+      } else {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        this.x += nx * SEARCH_SPEED * dt;
+        this.y += ny * SEARCH_SPEED * dt;
+
+        if (nx > 0) this.facingX = 1;
+        else if (nx < 0) this.facingX = -1;
+      }
+    } else {
+      // At last known position — countdown and pivot
+      this.searchTimer += delta;
+      this.searchPivotTimer += delta;
+
+      // Pivot "look around" every SEARCH_PIVOT_INTERVAL ms
+      if (this.searchPivotTimer >= SEARCH_PIVOT_INTERVAL) {
+        this.searchPivotTimer -= SEARCH_PIVOT_INTERVAL;
+        this.facingX = this.facingX === 1 ? -1 : 1;
+      }
+
+      // Search expired — revert to PATROL
+      if (this.searchTimer >= SEARCH_DURATION_MS) {
+        this.waypointIndex = this.savedWaypointIndex;
+        this._mainConeTime = 0;
+        this._cooldownTimer = 0;
+        this.setGuardState(GuardState.PATROL);
+      }
+    }
+  }
+
   // ── Drawing ──────────────────────────────────────────────────────────────────
   private redraw(): void {
     this.lastDrawnState = this._state;
@@ -195,7 +399,7 @@ export class Guard extends Phaser.GameObjects.Container {
         this.drawAlerted(g);
         break;
       case GuardState.SEARCHING:
-        // TODO(T5): add distinct visual — currently renders same as PATROL
+        // SEARCHING renders same as PATROL for now — distinct visual is a stretch goal
         this.drawNormal(g);
         break;
     }
