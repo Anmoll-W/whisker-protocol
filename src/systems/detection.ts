@@ -140,8 +140,8 @@ export function checkLineOfSight(
 
   // Determine which zone (main takes precedence)
   const candidateMain = inMainAngle && inMainRange;
-  // Peripheral: within peripheral angle+range, but NOT already in the main cone range
-  const candidatePeripheral = inPeripheralAngle && inPeripheralRange && !inMainRange;
+  // Peripheral: within peripheral angle+range, but NOT already in the main cone
+  const candidatePeripheral = inPeripheralAngle && inPeripheralRange && !candidateMain;
 
   const anyCone = candidateMain || candidatePeripheral;
 

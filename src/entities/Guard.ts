@@ -90,9 +90,7 @@ export class Guard extends Phaser.GameObjects.Container {
     if (result.inMainCone) {
       this._mainConeTime += delta;
       this._peripheralTime = 0; // main cone takes precedence — reset peripheral
-      if (this._mainConeTime > 0) {
-        this.setGuardState(GuardState.SUSPICIOUS);
-      }
+      this.setGuardState(GuardState.SUSPICIOUS);
     } else if (result.inPeripheral) {
       this._peripheralTime += delta;
       this._mainConeTime = 0;
@@ -102,7 +100,8 @@ export class Guard extends Phaser.GameObjects.Container {
       this._peripheralTime = 0;
       // If guard was only SUSPICIOUS (not yet ALERTED), revert to PATROL / IDLE
       if (this._state === GuardState.SUSPICIOUS) {
-        // Return to whichever movement state was active before; default to PATROL
+        // T5: when building the full state machine, restore the current waypoint target
+        // on revert to PATROL — guard resumes from mid-path without snapping to last waypoint.
         this.setGuardState(GuardState.PATROL);
       }
     }
