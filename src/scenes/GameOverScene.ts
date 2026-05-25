@@ -52,7 +52,7 @@ export class GameOverScene extends Phaser.Scene {
     mainText.setDepth(2);
 
     // ── Subtitle ─────────────────────────────────────────────────────────────
-    const subText = this.add.text(W / 2, mainText.y + mainText.height / 2 + 10, 'Woh dekh liya...', {
+    const subText = this.add.text(W / 2, H * 0.50, 'Woh dekh liya...', {
       fontFamily: 'monospace',
       fontSize: '18px',
       fontStyle: 'italic',
@@ -99,6 +99,7 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private _restart(): void {
+    // Scene stop/start calls are deferred by Phaser's scene manager — safe to chain here.
     this.scene.stop('GameOverScene');
     this.scene.stop('GameScene');
     this.scene.start('GameScene');

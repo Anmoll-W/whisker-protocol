@@ -57,6 +57,7 @@ export class GameScene extends Phaser.Scene {
 
     // Listen for guard ALERTED event — launch GameOverScene overlay
     this.guard.on(Guard.EVENT_ALERTED, () => {
+      if (this.scene.isActive('GameOverScene')) return; // belt-and-suspenders
       this.scene.pause();
       this.scene.launch('GameOverScene');
     });
