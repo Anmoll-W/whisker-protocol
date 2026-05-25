@@ -6,6 +6,7 @@
 import Phaser from 'phaser';
 import { TileMap } from '@/entities/TileMap';
 import { PlayerState, DEFAULT_PLAYER_CONFIG, type PlayerConfig } from '@/types/player-types';
+import { BASE_NOISE_RADIUS } from '@/systems/noise';
 
 // ── Input key bindings ────────────────────────────────────────────────────────
 interface InputKeys {
@@ -408,7 +409,7 @@ export class Player extends Phaser.GameObjects.Container {
    * Equals 0 when the player is silent (FREEZE, standing still, or crouching in place).
    */
   get noiseRadius(): number {
-    return this.noiseLevel <= 0 ? 0 : 64 * this.noiseLevel;
+    return this.noiseLevel <= 0 ? 0 : BASE_NOISE_RADIUS * this.noiseLevel;
   }
 
   /** Return current player state — useful for HUD/debug overlays. */

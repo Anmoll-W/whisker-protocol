@@ -68,7 +68,7 @@ export class GameScene extends Phaser.Scene {
     const noiseEvent = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);
     if (noiseEvent !== null) {
       const canHear = canGuardHearNoise(this.guard.guardPosition, noiseEvent);
-      if (canHear && this.guard.guardState === GuardState.PATROL) {
+      if (canHear && (this.guard.guardState === GuardState.PATROL || this.guard.guardState === GuardState.IDLE)) {
         this.guard.setGuardState(GuardState.SUSPICIOUS);
         this.guard.lastKnownPosition = { x: this.player.x, y: this.player.y };
       }
