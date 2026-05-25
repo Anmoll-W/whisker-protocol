@@ -235,12 +235,12 @@ export class Player extends Phaser.GameObjects.Container {
     const tailCpY = tailStartY - 8;
     const tailEndX = tailStartX - 12;
     const tailEndY = tailStartY - 3;
+    // quadraticCurveTo is NOT available in Phaser 3.90 Graphics at runtime —
+    // approximate the curve with two lineTo segments via control point.
     g.beginPath();
     g.moveTo(tailStartX, tailStartY);
-    // quadraticCurveTo exists on Phaser.GameObjects.Graphics at runtime but is
-    // missing from the bundled Phaser type declarations — cast to access it.
-    (g as unknown as { quadraticCurveTo(cpX: number, cpY: number, x: number, y: number): void })
-      .quadraticCurveTo(tailCpX, tailCpY, tailEndX, tailEndY);
+    g.lineTo(tailCpX, tailCpY);
+    g.lineTo(tailEndX, tailEndY);
     g.strokePath();
 
     // ── Head ── slightly lighter circle, above body center
