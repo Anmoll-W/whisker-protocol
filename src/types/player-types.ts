@@ -20,6 +20,6 @@ export interface PlayerConfig {
 export const DEFAULT_PLAYER_CONFIG: PlayerConfig = {
   walkSpeed: 96,
   crouchSpeed: 48,
-  hitboxHalfW: 6,
-  hitboxHalfH: 6,
+  hitboxHalfW: 14,
+  hitboxHalfH: 14,
 };

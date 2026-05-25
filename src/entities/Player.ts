@@ -162,7 +162,7 @@ export class Player extends Phaser.GameObjects.Container {
     const hw = this.cfg.hitboxHalfW;
     const hh = this.cfg.hitboxHalfH;
 
-    // Sample all 4 corners of the 12×12 hitbox
+    // Sample all 4 corners of the 28×28 hitbox
     const corners: [number, number][] = [
       [wx - hw, wy - hh],
       [wx + hw, wy - hh],
@@ -206,201 +206,272 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   /**
-   * WALK state — upright orange-brown cat.
-   * Body is centered at origin; head above; ears, eyes, tail, legs.
+   * WALK state — upright desi street cat, 3× larger than original.
+   * Body ~36×28px, head radius 10px, proper anatomy with shadow + outline.
    * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
   private drawWalk(g: Phaser.GameObjects.Graphics): void {
-    // ── Body ── warm orange-brown rounded rect 12×10, centered
-    const bW = 12; const bH = 10;
-    const bX = -bW / 2; // left edge of body
-    const bY = -bH / 2; // top edge of body (centered vertically)
-    g.fillStyle(0xc87941, 1);
-    g.fillRoundedRect(bX, bY, bW, bH, 2);
+    // ── Ground shadow ── drawn first (behind everything)
+    g.fillStyle(0x000000, 0.25);
+    g.fillEllipse(0, 14, 32, 8);
 
-    // ── Legs ── 4 tiny dark-orange rects at bottom corners of body
-    g.fillStyle(0xb06030, 1);
-    const legW = 2; const legH = 4;
-    g.fillRect(bX + 1,             bY + bH - 1, legW, legH);
-    g.fillRect(bX + bW - 1 - legW, bY + bH - 1, legW, legH);
-    g.fillRect(bX + 2,             bY + bH,     legW, legH - 1);
-    g.fillRect(bX + bW - 2 - legW, bY + bH,     legW, legH - 1);
+    // ── Body outline + fill ──
+    g.fillStyle(0x331100, 1);
+    g.fillRoundedRect(-20, -10, 38, 30, 5); // outline (1px bigger each side)
+    g.fillStyle(0xE8751A, 1);
+    g.fillRoundedRect(-19, -9, 36, 28, 4);  // actual body
 
-    // ── Tail ── quadratic curve behind the body (left side when facing right)
-    // Control point: dx+8 dy-8 from start; end: dx+12 dy-3
-    g.lineStyle(2, 0xb06030, 1);
-    const tailStartX = bX - 1;      // just behind back of body
-    const tailStartY = 0;
-    const tailCpX = tailStartX - 8;
-    const tailCpY = tailStartY - 8;
-    const tailEndX = tailStartX - 12;
-    const tailEndY = tailStartY - 3;
-    // quadraticCurveTo is NOT available in Phaser 3.90 Graphics at runtime —
-    // approximate the curve with two lineTo segments via control point.
+    // ── Belly patch (cream oval) ──
+    g.fillStyle(0xF5D5A0, 1);
+    g.fillEllipse(0, 3, 18, 14);
+
+    // ── Legs — 4 rounded stubs ──
+    g.fillStyle(0xC05E10, 1);
+    g.fillRoundedRect(8,   16, 8, 12, 3); // front-right
+    g.fillRoundedRect(-2,  16, 8, 12, 3); // front-left
+    g.fillRoundedRect(-8,  16, 7, 10, 3); // back-right
+    g.fillRoundedRect(-14, 16, 7, 10, 3); // back-left
+
+    // ── Tail — thick kinked line behind body ──
+    g.lineStyle(4, 0xC05E10, 1);
     g.beginPath();
-    g.moveTo(tailStartX, tailStartY);
-    g.lineTo(tailCpX, tailCpY);
-    g.lineTo(tailEndX, tailEndY);
+    g.moveTo(-19, 5);
+    g.lineTo(-28, -5);
+    g.lineTo(-24, -16);
     g.strokePath();
 
-    // ── Head ── slightly lighter circle, above body center
-    const headR = 4; // radius = 4 → 8px diameter
-    const headCX = 2; // slightly forward (toward facing direction = right)
-    const headCY = bY - headR;
-    g.fillStyle(0xd4894d, 1);
-    g.fillCircle(headCX, headCY, headR);
+    // ── Head outline + fill ──
+    g.fillStyle(0x331100, 1);
+    g.fillCircle(10, -22, 12); // outline (1px bigger)
+    g.fillStyle(0xF0963A, 1);
+    g.fillCircle(10, -22, 11); // actual head
 
-    // ── Ears ── two triangles at top of head (right-facing: back ear at left, front ear at right)
-    g.fillStyle(0xc87941, 1);
-    // Back ear (left side of head)
-    g.fillTriangle(
-      headCX - 3, headCY - headR,     // outer base
-      headCX - 1, headCY - headR,     // inner base
-      headCX - 3, headCY - headR - 4  // tip
-    );
-    // Front ear (right side of head)
-    g.fillTriangle(
-      headCX + 1, headCY - headR,
-      headCX + 3, headCY - headR,
-      headCX + 3, headCY - headR - 4
-    );
+    // ── Head highlight (light spot) ──
+    g.fillStyle(0xFFB060, 0.4);
+    g.fillCircle(7, -26, 5);
 
-    // ── Eyes ── two tiny dark dots
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX - 3, headCY - 1, 2, 2); // back eye
-    g.fillRect(headCX + 0, headCY - 1, 2, 2); // front eye
+    // ── Ears — left ──
+    g.fillStyle(0xE8751A, 1);
+    g.fillTriangle(1, -33, 6, -33, 3, -44);   // outer left ear
+    g.fillStyle(0xFFAABB, 1);
+    g.fillTriangle(2, -33, 5, -33, 3, -41);   // pink inner left ear
+
+    // ── Ears — right ──
+    g.fillStyle(0xE8751A, 1);
+    g.fillTriangle(12, -33, 17, -33, 18, -44); // outer right ear
+    g.fillStyle(0xFFAABB, 1);
+    g.fillTriangle(13, -33, 16, -33, 17, -41); // pink inner right ear
+
+    // ── Eyes — bright green with dark pupils ──
+    g.fillStyle(0x22CC44, 1);
+    g.fillCircle(5, -23, 4);   // left eye (green)
+    g.fillStyle(0x111111, 1);
+    g.fillCircle(5, -23, 2);   // left pupil
+    g.fillStyle(0x22CC44, 1);
+    g.fillCircle(14, -23, 4);  // right eye (green)
+    g.fillStyle(0x111111, 1);
+    g.fillCircle(14, -23, 2);  // right pupil
+
+    // ── Nose — tiny pink triangle ──
+    g.fillStyle(0xFF7788, 1);
+    g.fillTriangle(8, -18, 12, -18, 10, -16);
+
+    // ── Whiskers ──
+    g.lineStyle(1, 0xFFDDCC, 0.6);
+    g.beginPath();
+    g.moveTo(5, -18);
+    g.lineTo(-8, -16);
+    g.strokePath();
+    g.beginPath();
+    g.moveTo(14, -18);
+    g.lineTo(27, -16);
+    g.strokePath();
   }
 
   /**
-   * CROUCH state — squashed body, flattened ears, slit eyes.
+   * CROUCH state — squashed body, flattened ears, slit eyes, flat tail.
    * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
   private drawCrouch(g: Phaser.GameObjects.Graphics): void {
-    // ── Body ── squashed to 12×7
-    const bW = 12; const bH = 7;
-    const bX = -bW / 2;
-    const bY = -bH / 2;
-    g.fillStyle(0xc87941, 1);
-    g.fillRoundedRect(bX, bY, bW, bH, 2);
+    // ── Ground shadow ── slightly wider when crouching
+    g.fillStyle(0x000000, 0.25);
+    g.fillEllipse(0, 16, 38, 6);
 
-    // ── Legs — barely visible stubs ──
-    g.fillStyle(0xb06030, 1);
-    const legW = 2; const legH = 3;
-    g.fillRect(bX + 1,             bY + bH - 1, legW, legH);
-    g.fillRect(bX + bW - 1 - legW, bY + bH - 1, legW, legH);
+    // ── Body outline + fill (squashed) ──
+    g.fillStyle(0x331100, 1);
+    g.fillRoundedRect(-20, -4, 38, 22, 5); // outline
+    g.fillStyle(0xD06A18, 1);              // slightly darker when crouching
+    g.fillRoundedRect(-19, -3, 36, 20, 4); // squashed body
 
-    // ── Tail ── low and flat behind body ──
-    g.lineStyle(2, 0xb06030, 1);
+    // ── Belly patch ──
+    g.fillStyle(0xF5D5A0, 1);
+    g.fillEllipse(0, 6, 18, 10);
+
+    // ── Legs — stubs visible below squashed body ──
+    g.fillStyle(0xC05E10, 1);
+    g.fillRoundedRect(8,   14, 8, 8, 3);
+    g.fillRoundedRect(-2,  14, 8, 8, 3);
+    g.fillRoundedRect(-8,  14, 7, 6, 3);
+    g.fillRoundedRect(-14, 14, 7, 6, 3);
+
+    // ── Tail — flat along ground ──
+    g.lineStyle(4, 0xC05E10, 1);
     g.beginPath();
-    g.moveTo(bX - 1, 2);
-    g.lineTo(bX - 5, 2);
+    g.moveTo(-19, 8);
+    g.lineTo(-30, 8);
     g.strokePath();
 
-    // ── Head ── closer to body (body is squashed, head drops down)
-    const headR = 4;
-    const headCX = 2;
-    const headCY = bY - headR + 1; // 1px closer than walk
-    g.fillStyle(0xd4894d, 1);
-    g.fillCircle(headCX, headCY, headR);
+    // ── Head outline + fill (drops lower) ──
+    g.fillStyle(0x331100, 1);
+    g.fillCircle(10, -14, 12);
+    g.fillStyle(0xD06A18, 1);
+    g.fillCircle(10, -14, 10);
 
-    // ── Ears ── flattened, pointing sideways
-    g.fillStyle(0xc87941, 1);
-    // Back ear (flat triangle, pointing away from face = left)
-    g.fillTriangle(
-      headCX - headR,     headCY - 1,
-      headCX - headR,     headCY + 2,
-      headCX - headR - 4, headCY
-    );
-    // Front ear (right)
-    g.fillTriangle(
-      headCX + headR - 1, headCY - 1,
-      headCX + headR - 1, headCY + 2,
-      headCX + headR + 3, headCY
-    );
+    // ── Head highlight ──
+    g.fillStyle(0xFFB060, 0.3);
+    g.fillCircle(7, -17, 4);
 
-    // ── Eyes ── slit (2×1px horizontal lines) ──
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX - 3, headCY, 2, 1);
-    g.fillRect(headCX + 0, headCY, 2, 1);
+    // ── Ears — flattened sideways ──
+    g.fillStyle(0xD06A18, 1);
+    // Left ear — points left
+    g.fillTriangle(1, -20, 1, -16, -8, -18);
+    g.fillStyle(0xFFAABB, 1);
+    g.fillTriangle(1, -19, 1, -17, -5, -18);
+    // Right ear — points right
+    g.fillStyle(0xD06A18, 1);
+    g.fillTriangle(18, -20, 18, -16, 27, -18);
+    g.fillStyle(0xFFAABB, 1);
+    g.fillTriangle(18, -19, 18, -17, 24, -18);
+
+    // ── Eyes — horizontal slits (crouching/stalking) ──
+    g.fillStyle(0x111111, 1);
+    g.fillRect(3, -15, 6, 2);   // left eye slit
+    g.fillRect(12, -15, 6, 2);  // right eye slit
+
+    // ── Nose ──
+    g.fillStyle(0xFF7788, 1);
+    g.fillTriangle(8, -10, 12, -10, 10, -8);
+
+    // ── Whiskers ──
+    g.lineStyle(1, 0xFFDDCC, 0.6);
+    g.beginPath();
+    g.moveTo(5, -10);
+    g.lineTo(-8, -8);
+    g.strokePath();
+    g.beginPath();
+    g.moveTo(14, -10);
+    g.lineTo(27, -8);
+    g.strokePath();
   }
 
   /**
-   * FREEZE state — desaturated cool body, frost star above head.
+   * FREEZE state — desaturated body, squinting eyes, frost star, blue tint overlay.
    * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
   private drawFreeze(g: Phaser.GameObjects.Graphics): void {
-    // ── Body ── desaturated cool tint
-    const bW = 12; const bH = 10;
-    const bX = -bW / 2;
-    const bY = -bH / 2;
-    g.fillStyle(0x9a7060, 1);
-    g.fillRoundedRect(bX, bY, bW, bH, 2);
+    // ── Ground shadow ──
+    g.fillStyle(0x000000, 0.25);
+    g.fillEllipse(0, 14, 32, 8);
+
+    // ── Body outline + fill (desaturated) ──
+    g.fillStyle(0x331100, 1);
+    g.fillRoundedRect(-20, -10, 38, 30, 5);
+    g.fillStyle(0x8B6E5A, 1); // desaturated warm grey
+    g.fillRoundedRect(-19, -9, 36, 28, 4);
+
+    // ── Blue frost tint overlay ──
+    g.fillStyle(0x8899CC, 0.2);
+    g.fillRoundedRect(-19, -9, 36, 28, 4);
+
+    // ── Belly patch (muted) ──
+    g.fillStyle(0xD5BFA0, 1);
+    g.fillEllipse(0, 3, 18, 14);
 
     // ── Legs ──
-    g.fillStyle(0x806050, 1);
-    const legW = 2; const legH = 4;
-    g.fillRect(bX + 1,             bY + bH - 1, legW, legH);
-    g.fillRect(bX + bW - 1 - legW, bY + bH - 1, legW, legH);
-    g.fillRect(bX + 2,             bY + bH,     legW, legH - 1);
-    g.fillRect(bX + bW - 2 - legW, bY + bH,     legW, legH - 1);
+    g.fillStyle(0x7A5E4A, 1);
+    g.fillRoundedRect(8,   16, 8, 12, 3);
+    g.fillRoundedRect(-2,  16, 8, 12, 3);
+    g.fillRoundedRect(-8,  16, 7, 10, 3);
+    g.fillRoundedRect(-14, 16, 7, 10, 3);
 
-    // ── Tail ──
-    g.lineStyle(2, 0x806050, 1);
+    // ── Tail — same position as walk ──
+    g.lineStyle(4, 0x7A5E4A, 1);
     g.beginPath();
-    g.moveTo(bX - 1, 0);
-    g.lineTo(bX - 4, -4);
+    g.moveTo(-19, 5);
+    g.lineTo(-28, -5);
+    g.lineTo(-24, -16);
     g.strokePath();
 
-    // ── Head ── cool tint
-    const headR = 4;
-    const headCX = 2;
-    const headCY = bY - headR;
-    g.fillStyle(0xaa8878, 1);
-    g.fillCircle(headCX, headCY, headR);
+    // ── Head outline + fill (desaturated) ──
+    g.fillStyle(0x331100, 1);
+    g.fillCircle(10, -22, 12);
+    g.fillStyle(0x9E7E6A, 1);
+    g.fillCircle(10, -22, 11);
+
+    // ── Blue frost tint on head ──
+    g.fillStyle(0x8899CC, 0.2);
+    g.fillCircle(10, -22, 11);
 
     // ── Ears ──
-    g.fillStyle(0x9a7060, 1);
-    g.fillTriangle(
-      headCX - 3, headCY - headR,
-      headCX - 1, headCY - headR,
-      headCX - 3, headCY - headR - 4
-    );
-    g.fillTriangle(
-      headCX + 1, headCY - headR,
-      headCX + 3, headCY - headR,
-      headCX + 3, headCY - headR - 4
-    );
+    g.fillStyle(0x8B6E5A, 1);
+    g.fillTriangle(1, -33, 6, -33, 3, -44);
+    g.fillStyle(0xCC9999, 1); // muted pink inner
+    g.fillTriangle(2, -33, 5, -33, 3, -41);
+    g.fillStyle(0x8B6E5A, 1);
+    g.fillTriangle(12, -33, 17, -33, 18, -44);
+    g.fillStyle(0xCC9999, 1);
+    g.fillTriangle(13, -33, 16, -33, 17, -41);
 
-    // ── Eyes ── squinting (frozen)
-    g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX - 3, headCY, 2, 1);
-    g.fillRect(headCX + 0, headCY, 2, 1);
+    // ── Eyes — squinting slits (frozen) ──
+    g.fillStyle(0x111111, 1);
+    g.fillRect(3, -24, 6, 2);   // left eye slit
+    g.fillRect(12, -24, 6, 2);  // right eye slit
 
-    // ── Frost star ── 4 crossing lines above head (white glint)
-    // Center of star: above head; star is symmetric so scaleX mirroring is neutral
-    const starCX = headCX;
-    const starCY = headCY - headR - 5;
-    const starR = 3;
-    g.lineStyle(1, 0xffffff, 1);
-    // Horizontal
+    // ── Nose ──
+    g.fillStyle(0xCC6677, 1);
+    g.fillTriangle(8, -18, 12, -18, 10, -16);
+
+    // ── Whiskers ──
+    g.lineStyle(1, 0xCCCCDD, 0.5);
+    g.beginPath();
+    g.moveTo(5, -18);
+    g.lineTo(-8, -16);
+    g.strokePath();
+    g.beginPath();
+    g.moveTo(14, -18);
+    g.lineTo(27, -16);
+    g.strokePath();
+
+    // ── Frost star above head — 5 lines (cross + diagonals) ──
+    const starCX = 10;
+    const starCY = -38; // above head
+    const starR = 6;
+    const diag = Math.round(starR * 0.707); // ~4px
+    g.lineStyle(1.5, 0xCCEEFF, 1);
+    // Horizontal arm
     g.beginPath();
     g.moveTo(starCX - starR, starCY);
     g.lineTo(starCX + starR, starCY);
     g.strokePath();
-    // Vertical
+    // Vertical arm
     g.beginPath();
     g.moveTo(starCX, starCY - starR);
     g.lineTo(starCX, starCY + starR);
     g.strokePath();
     // Diagonal /
     g.beginPath();
-    g.moveTo(starCX - 2, starCY + 2);
-    g.lineTo(starCX + 2, starCY - 2);
+    g.moveTo(starCX - diag, starCY + diag);
+    g.lineTo(starCX + diag, starCY - diag);
     g.strokePath();
     // Diagonal \
     g.beginPath();
-    g.moveTo(starCX - 2, starCY - 2);
-    g.lineTo(starCX + 2, starCY + 2);
+    g.moveTo(starCX - diag, starCY - diag);
+    g.lineTo(starCX + diag, starCY + diag);
+    g.strokePath();
+    // Extra short horizontal tick (5th line — sparkle effect)
+    g.beginPath();
+    g.moveTo(starCX - 3, starCY - 3);
+    g.lineTo(starCX + 3, starCY - 3);
     g.strokePath();
   }
 
