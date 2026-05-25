@@ -43,7 +43,10 @@ export class Player extends Phaser.GameObjects.Container {
     this.cfg = cfg;
 
     // Graphics child — all cat drawing goes here
-    this.gfx = scene.add.graphics();
+    // Use make.graphics (not add.graphics) so it is NOT added to the scene's root
+    // display list. Only the Container registration below counts — avoids a ghost
+    // render at world origin.
+    this.gfx = scene.make.graphics({});
     this.add(this.gfx);
 
     // Depth above tiles
@@ -137,7 +140,8 @@ export class Player extends Phaser.GameObjects.Container {
     if (this.playerState === PlayerState.FREEZE) {
       speedMultiplier = 0;
     } else if (this.playerState === PlayerState.CROUCH) {
-      speedMultiplier = 0.5;
+      // Guard with movement check — CROUCH when stationary emits no noise
+      speedMultiplier = (vx !== 0 || vy !== 0) ? 0.5 : 0;
     } else {
       // WALK state — only emit noise when actually moving
       speedMultiplier = (vx !== 0 || vy !== 0) ? 1.0 : 0;
@@ -182,19 +186,20 @@ export class Player extends Phaser.GameObjects.Container {
     const g = this.gfx;
     g.clear();
 
-    // All coordinates are relative to the container origin (0,0 = Billu center).
-    // We draw right-facing and flip horizontally if facing left.
-    const flipX = this.facingX < 0 ? -1 : 1;
+    // Mirror the entire Graphics object when facing left. All draw calls below
+    // use right-facing constants only (no fx multiplier). Phaser mirrors
+    // the Graphics around its origin (the container center) when scaleX = -1.
+    g.scaleX = this.facingX;
 
     switch (this.playerState) {
       case PlayerState.WALK:
-        this.drawWalk(g, flipX);
+        this.drawWalk(g);
         break;
       case PlayerState.CROUCH:
-        this.drawCrouch(g, flipX);
+        this.drawCrouch(g);
         break;
       case PlayerState.FREEZE:
-        this.drawFreeze(g, flipX);
+        this.drawFreeze(g);
         break;
     }
   }
@@ -202,83 +207,77 @@ export class Player extends Phaser.GameObjects.Container {
   /**
    * WALK state — upright orange-brown cat.
    * Body is centered at origin; head above; ears, eyes, tail, legs.
+   * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
-  private drawWalk(g: Phaser.GameObjects.Graphics, fx: number): void {
+  private drawWalk(g: Phaser.GameObjects.Graphics): void {
     // ── Body ── warm orange-brown rounded rect 12×10, centered
     const bW = 12; const bH = 10;
-    const bX = fx * (-bW / 2); // left edge of body (flipped if facing left)
-    const bY = -bH / 2;        // top edge of body (centered vertically)
+    const bX = -bW / 2; // left edge of body
+    const bY = -bH / 2; // top edge of body (centered vertically)
     g.fillStyle(0xc87941, 1);
     g.fillRoundedRect(bX, bY, bW, bH, 2);
 
     // ── Legs ── 4 tiny dark-orange rects at bottom corners of body
     g.fillStyle(0xb06030, 1);
     const legW = 2; const legH = 4;
-    // Front-left leg (relative to right-facing = right-side legs drawn at +x)
     g.fillRect(bX + 1,             bY + bH - 1, legW, legH);
     g.fillRect(bX + bW - 1 - legW, bY + bH - 1, legW, legH);
-    // Back legs (slightly inset)
     g.fillRect(bX + 2,             bY + bH,     legW, legH - 1);
     g.fillRect(bX + bW - 2 - legW, bY + bH,     legW, legH - 1);
 
-    // ── Tail ── curved arc behind the body (left side when facing right)
+    // ── Tail ── quadratic curve behind the body (left side when facing right)
+    // Control point: dx+8 dy-8 from start; end: dx+12 dy-3
     g.lineStyle(2, 0xb06030, 1);
+    const tailStartX = bX - 1;      // just behind back of body
+    const tailStartY = 0;
+    const tailCpX = tailStartX - 8;
+    const tailCpY = tailStartY - 8;
+    const tailEndX = tailStartX - 12;
+    const tailEndY = tailStartY - 3;
     g.beginPath();
-    // Arc: starts at back of body, curves up and around
-    const tailBaseX = fx * (-bW / 2 - 1);
-    const tailBaseY = 0;
-    // Draw tail as a quadratic curve pointing backward+up
-    const tailCpX = fx * (-bW / 2 - 6);
-    const tailCpY = -6;
-    const tailEndX = fx * (-bW / 2 - 3);
-    const tailEndY = -10;
-    g.moveTo(tailBaseX, tailBaseY);
-    // Phaser Graphics doesn't have quadraticCurveTo on its path API, so approximate with 2 line segments
-    const midX = (tailBaseX + tailCpX) / 2 + (tailCpX - tailBaseX) * 0.1;
-    const midY = (tailBaseY + tailCpY) / 2 + (tailCpY - tailBaseY) * 0.1;
-    g.lineTo(midX, midY);
-    g.lineTo(tailEndX, tailEndY);
+    g.moveTo(tailStartX, tailStartY);
+    // quadraticCurveTo exists on Phaser.GameObjects.Graphics at runtime but is
+    // missing from the bundled Phaser type declarations — cast to access it.
+    (g as unknown as { quadraticCurveTo(cpX: number, cpY: number, x: number, y: number): void })
+      .quadraticCurveTo(tailCpX, tailCpY, tailEndX, tailEndY);
     g.strokePath();
 
     // ── Head ── slightly lighter circle, above body center
     const headR = 4; // radius = 4 → 8px diameter
-    const headCX = fx * 2; // slightly forward (toward facing direction)
+    const headCX = 2; // slightly forward (toward facing direction = right)
     const headCY = bY - headR;
     g.fillStyle(0xd4894d, 1);
     g.fillCircle(headCX, headCY, headR);
 
-    // ── Ears ── two triangles at top of head
+    // ── Ears ── two triangles at top of head (right-facing: back ear at left, front ear at right)
     g.fillStyle(0xc87941, 1);
-    // Left ear (relative to right-facing: left = back)
-    const earBackX = headCX + fx * (-3);
-    const earFrontX = headCX + fx * (-1);
+    // Back ear (left side of head)
     g.fillTriangle(
-      earBackX,      headCY - headR,       // outer base
-      earFrontX,     headCY - headR,       // inner base
-      earBackX,      headCY - headR - 4    // tip
+      headCX - 3, headCY - headR,     // outer base
+      headCX - 1, headCY - headR,     // inner base
+      headCX - 3, headCY - headR - 4  // tip
     );
-    // Right ear (facing = front)
-    const earBackX2 = headCX + fx * 1;
-    const earFrontX2 = headCX + fx * 3;
+    // Front ear (right side of head)
     g.fillTriangle(
-      earBackX2,     headCY - headR,
-      earFrontX2,    headCY - headR,
-      earFrontX2,    headCY - headR - 4
+      headCX + 1, headCY - headR,
+      headCX + 3, headCY - headR,
+      headCX + 3, headCY - headR - 4
     );
 
     // ── Eyes ── two tiny dark dots
     g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX + fx * (-2) - 1, headCY - 1, 2, 2); // back eye
-    g.fillRect(headCX + fx * 1 - 1,    headCY - 1, 2, 2); // front eye
+    g.fillRect(headCX - 3, headCY - 1, 2, 2); // back eye
+    g.fillRect(headCX + 0, headCY - 1, 2, 2); // front eye
   }
 
   /**
    * CROUCH state — squashed body, flattened ears, slit eyes.
+   * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
-  private drawCrouch(g: Phaser.GameObjects.Graphics, fx: number): void {
+  private drawCrouch(g: Phaser.GameObjects.Graphics): void {
     // ── Body ── squashed to 12×7
     const bW = 12; const bH = 7;
-    const bX = fx * (-bW / 2);
+    const bX = -bW / 2;
     const bY = -bH / 2;
     g.fillStyle(0xc87941, 1);
     g.fillRoundedRect(bX, bY, bW, bH, 2);
@@ -292,47 +291,46 @@ export class Player extends Phaser.GameObjects.Container {
     // ── Tail ── low and flat behind body ──
     g.lineStyle(2, 0xb06030, 1);
     g.beginPath();
-    const tailBaseX = fx * (-bW / 2 - 1);
-    const tailBaseY = 2;
-    g.moveTo(tailBaseX, tailBaseY);
-    g.lineTo(fx * (-bW / 2 - 5), 2);
+    g.moveTo(bX - 1, 2);
+    g.lineTo(bX - 5, 2);
     g.strokePath();
 
     // ── Head ── closer to body (body is squashed, head drops down)
     const headR = 4;
-    const headCX = fx * 2;
+    const headCX = 2;
     const headCY = bY - headR + 1; // 1px closer than walk
     g.fillStyle(0xd4894d, 1);
     g.fillCircle(headCX, headCY, headR);
 
     // ── Ears ── flattened, pointing sideways
     g.fillStyle(0xc87941, 1);
-    // Back ear (flat triangle, pointing away from face)
+    // Back ear (flat triangle, pointing away from face = left)
     g.fillTriangle(
-      headCX + fx * (-headR),     headCY - 1,
-      headCX + fx * (-headR),     headCY + 2,
-      headCX + fx * (-headR - 4), headCY
+      headCX - headR,     headCY - 1,
+      headCX - headR,     headCY + 2,
+      headCX - headR - 4, headCY
     );
-    // Front ear
+    // Front ear (right)
     g.fillTriangle(
-      headCX + fx * (headR - 1),  headCY - 1,
-      headCX + fx * (headR - 1),  headCY + 2,
-      headCX + fx * (headR + 3),  headCY
+      headCX + headR - 1, headCY - 1,
+      headCX + headR - 1, headCY + 2,
+      headCX + headR + 3, headCY
     );
 
     // ── Eyes ── slit (2×1px horizontal lines) ──
     g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX + fx * (-2) - 1, headCY, 2, 1);
-    g.fillRect(headCX + fx * 1 - 1,    headCY, 2, 1);
+    g.fillRect(headCX - 3, headCY, 2, 1);
+    g.fillRect(headCX + 0, headCY, 2, 1);
   }
 
   /**
    * FREEZE state — desaturated cool body, frost star above head.
+   * All coordinates are right-facing; scaleX handles left-facing mirroring.
    */
-  private drawFreeze(g: Phaser.GameObjects.Graphics, fx: number): void {
+  private drawFreeze(g: Phaser.GameObjects.Graphics): void {
     // ── Body ── desaturated cool tint
     const bW = 12; const bH = 10;
-    const bX = fx * (-bW / 2);
+    const bX = -bW / 2;
     const bY = -bH / 2;
     g.fillStyle(0x9a7060, 1);
     g.fillRoundedRect(bX, bY, bW, bH, 2);
@@ -348,42 +346,37 @@ export class Player extends Phaser.GameObjects.Container {
     // ── Tail ──
     g.lineStyle(2, 0x806050, 1);
     g.beginPath();
-    const tailBaseX = fx * (-bW / 2 - 1);
-    g.moveTo(tailBaseX, 0);
-    g.lineTo(fx * (-bW / 2 - 4), -4);
+    g.moveTo(bX - 1, 0);
+    g.lineTo(bX - 4, -4);
     g.strokePath();
 
     // ── Head ── cool tint
     const headR = 4;
-    const headCX = fx * 2;
+    const headCX = 2;
     const headCY = bY - headR;
     g.fillStyle(0xaa8878, 1);
     g.fillCircle(headCX, headCY, headR);
 
     // ── Ears ──
     g.fillStyle(0x9a7060, 1);
-    const earBackX = headCX + fx * (-3);
-    const earFrontX = headCX + fx * (-1);
     g.fillTriangle(
-      earBackX,  headCY - headR,
-      earFrontX, headCY - headR,
-      earBackX,  headCY - headR - 4
+      headCX - 3, headCY - headR,
+      headCX - 1, headCY - headR,
+      headCX - 3, headCY - headR - 4
     );
-    const earBackX2 = headCX + fx * 1;
-    const earFrontX2 = headCX + fx * 3;
     g.fillTriangle(
-      earBackX2,  headCY - headR,
-      earFrontX2, headCY - headR,
-      earFrontX2, headCY - headR - 4
+      headCX + 1, headCY - headR,
+      headCX + 3, headCY - headR,
+      headCX + 3, headCY - headR - 4
     );
 
     // ── Eyes ── squinting (frozen)
     g.fillStyle(0x1a1a1a, 1);
-    g.fillRect(headCX + fx * (-2) - 1, headCY, 2, 1);
-    g.fillRect(headCX + fx * 1 - 1,    headCY, 2, 1);
+    g.fillRect(headCX - 3, headCY, 2, 1);
+    g.fillRect(headCX + 0, headCY, 2, 1);
 
     // ── Frost star ── 4 crossing lines above head (white glint)
-    // Center of star: above head
+    // Center of star: above head; star is symmetric so scaleX mirroring is neutral
     const starCX = headCX;
     const starCY = headCY - headR - 5;
     const starR = 3;

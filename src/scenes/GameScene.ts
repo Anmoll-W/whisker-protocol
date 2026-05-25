@@ -27,7 +27,7 @@ export class GameScene extends Phaser.Scene {
     const startX = 3 * TILE_SIZE + TILE_SIZE / 2;
     const startY = 7 * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, startX, startY, this.tileMap);
-    this.add.existing(this.player as unknown as Phaser.GameObjects.GameObject);
+    this.add.existing(this.player);
   }
 
   update(_time: number, delta: number): void {
