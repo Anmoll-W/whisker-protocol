@@ -11,6 +11,6 @@ export class BootScene extends Phaser.Scene {
 
   create(): void {
     console.log('Whisker Protocol boot OK');
-    // TODO: transition to PreloadScene once assets exist
+    this.scene.start('PreloadScene');
   }
 }

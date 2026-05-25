@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from '@/scenes/BootScene';
+import { PreloadScene } from '@/scenes/PreloadScene';
+import { GameScene } from '@/scenes/GameScene';
 import { initRNG } from '@/systems/rng';
 
 // Initialize seeded RNG before game starts
@@ -9,10 +11,10 @@ initRNG(urlSeed);
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: 480,
-  height: 320,
+  width: 640,
+  height: 480,
   backgroundColor: '#1a1a2e',
-  scene: [BootScene],
+  scene: [BootScene, PreloadScene, GameScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
