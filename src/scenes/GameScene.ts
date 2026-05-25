@@ -7,7 +7,6 @@ import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
 import { FoodItem } from '@/entities/FoodItem';
 import { ExitZone } from '@/entities/ExitZone';
-import { GuardState } from '@/types/guard-types';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
 import { computeNoise, canGuardHearNoise } from '@/systems/noise';
@@ -105,9 +104,8 @@ export class GameScene extends Phaser.Scene {
     const noiseEvent = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);
     if (noiseEvent !== null) {
       const canHear = canGuardHearNoise(this.guard.guardPosition, noiseEvent);
-      if (canHear && (this.guard.guardState === GuardState.PATROL || this.guard.guardState === GuardState.IDLE)) {
-        this.guard.setGuardState(GuardState.SUSPICIOUS);
-        this.guard.lastKnownPosition = { x: this.player.x, y: this.player.y };
+      if (canHear) {
+        this.guard.hearNoise({ x: this.player.x, y: this.player.y });
       }
       // Guards already SUSPICIOUS, ALERTED, or SEARCHING are not downgraded by noise
     }
@@ -136,13 +134,17 @@ export class GameScene extends Phaser.Scene {
     );
 
     // ── Detection cone debug overlay ─────────────────────────────────────────
+    // When food is carried the effective range is 20% larger — reflect that in the overlay.
+    const effectiveConeConfig = this.guard.playerCarryingFood
+      ? { ...DEFAULT_CONE_CONFIG, range: DEFAULT_CONE_CONFIG.range * 1.2 }
+      : DEFAULT_CONE_CONFIG;
     this.detectionDebugGfx.clear();
     renderDetectionDebug(
       this.detectionDebugGfx,
       this.guard.guardPosition,
       this.guard.facing,
       result,
-      DEFAULT_CONE_CONFIG,
+      effectiveConeConfig,
     );
   }
 

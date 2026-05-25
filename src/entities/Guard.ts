@@ -117,6 +117,20 @@ export class Guard extends Phaser.GameObjects.Container {
     }
   }
 
+  /**
+   * Triggered by GameScene when the guard hears a noise event.
+   * Resets stale cone timers before entering SUSPICIOUS so accumulated
+   * _mainConeTime from a previous cycle cannot prematurely trigger ALERTED.
+   * Only acts when the guard is currently PATROL or IDLE.
+   */
+  hearNoise(pos: { x: number; y: number }): void {
+    if (this._state !== GuardState.PATROL && this._state !== GuardState.IDLE) return;
+    this._mainConeTime = 0;
+    this.savedWaypointIndex = this.waypointIndex;
+    this.lastKnownPosition = { x: pos.x, y: pos.y };
+    this.setGuardState(GuardState.SUSPICIOUS);
+  }
+
   /** Milliseconds the player has been continuously in the main cone with clear LOS. */
   get mainConeTime(): number {
     return this._mainConeTime;

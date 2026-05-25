@@ -29,23 +29,23 @@ export class ExitZone extends Phaser.GameObjects.Container {
     if (this.isUnlocked) return;
     this.isUnlocked = true;
 
-    // Remove locked label if present
-    if (this.label) {
-      this.label.destroy();
-      this.label = null;
-    }
-
     this._drawUnlocked();
 
-    // "NIKAL!" text floating above
-    this.label = this.scene.add.text(this.x, this.y - HALF - 14, 'NIKAL!', {
-      fontFamily: 'monospace',
-      fontSize: '14px',
-      fontStyle: 'bold',
-      color: '#ffd700',
+    // "NIKAL!" text floating above — local coords relative to container origin
+    this.label = this.scene.make.text({
+      x: 0,
+      y: -HALF - 14,
+      text: 'NIKAL!',
+      style: {
+        fontFamily: 'monospace',
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#ffd700',
+      },
     });
     this.label.setOrigin(0.5, 1);
     this.label.setDepth(6);
+    this.add(this.label);
 
     // Breathing glow — pulsing alpha on this Container
     this.pulseTween = this.scene.tweens.add({
@@ -127,15 +127,11 @@ export class ExitZone extends Phaser.GameObjects.Container {
     g.strokePath();
   }
 
-  /** Clean up label and tween when scene restarts. */
+  /** Clean up tween when scene restarts. Label is a Container child — destroyed automatically. */
   destroy(fromScene?: boolean): void {
     if (this.pulseTween) {
       this.pulseTween.stop();
       this.pulseTween = null;
-    }
-    if (this.label) {
-      this.label.destroy();
-      this.label = null;
     }
     super.destroy(fromScene);
   }
