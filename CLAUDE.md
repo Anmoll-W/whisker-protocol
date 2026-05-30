@@ -1,8 +1,19 @@
 # CLAUDE.md — Whisker Protocol
 
-**Status:** Phase 1 prototype complete (2026-05-25). Persona panel: 5.3/10. Pivoting to award-winning overhaul.
-**Plan of record:** `/Users/aw/Library/Mobile Documents/com~apple~CloudDocs/Obsidian/Aw Vault/Projects/Consulting-Venture/knowledge/whisker-protocol-tasks.md` (v2, 6-8 weeks)
+**Status:** Phase-1+L2 impl plan PANEL-VETTED (r2, all 6 personas APPROVE-WITH-CHANGES) + Anmoll-approved (full-commit, no kill criterion). **READY TO BUILD — start a fresh session and execute the BUILD KICKOFF block.** (2026-05-30)
+**Design spec (read first):** `…/Aw Vault/Projects/PM-Code/knowledge/whisker-protocol-cat-chaos-design.md`
+**Plan of record (BUILD FROM THIS):** `…/Aw Vault/Projects/PM-Code/knowledge/whisker-protocol-impl-plan-phase1-L2.md` (r2 — has asset math, A0 contract phase, L2 gate, "▶ BUILD KICKOFF — START HERE" block). Art decision: Pillow + heavy code-shading; AI-polish = gated L2 lever.
+**Prior plan layer:** `…/whisker-protocol-tasks.md` (v2 phases) · `…/whisker-protocol-cat-chaos-design.md` (design layer).
 **Mandate (user, 2026-05-25):** "Win awards, played worldwide. Whatever it takes."
+
+## Cat Chaos design (2026-05-30) — what changed since vision-lock
+
+- **Hook:** Cat Chaos — bat props (brass/clay/bottle) off ledges → noise lures guards. THE hero verb (panel-validated, all 6 personas).
+- **Cat-behavior mechanics:** stillness=stealth, gap-squeeze, hidey-holes, tail-as-HUD, chirp-at-laddoo. Startle reflex = slice-optional.
+- **Retention:** Star grades (★/★★/★★★ ghost-run) + Nine Lives (persist across tab refresh; mid-run safety valve) + **daily-seed challenge in v1**.
+- **Worldwide unlock:** game-STATE feedback is universal visual+sound; Hindi = flavor only, never load-bearing.
+- **Build gate:** L2 vertical slice to final quality FIRST. Gate = defined rubric + independent panel before slice · ≥9.0 · unprompted-bat-in-60s · **bundle audit parallel** · 60fps mid-range Android · portrait one-thumb tester.
+- **Before any code:** asset-pipeline math (atlas/audio budget vs 8MB) must be in the plan.
 
 ## Hard constraints (locked 2026-05-25)
 
@@ -76,11 +87,12 @@ src/
 
 | Phase | Status |
 |---|---|
-| 0 — Vision Lock | NOT STARTED — write `art-direction.md` first |
-| 1 — Asset Pipeline | NOT STARTED |
-| 2 — Sprite Foundation | NOT STARTED |
-| 3 — Level Design | NOT STARTED |
-| 4 — Juice + Polish | NOT STARTED |
+| 0 — Vision Lock | DONE — art-direction.md + sprite_gen.py Billu candidates committed |
+| Plan — Phase-1+L2 impl plan | DONE — panel-vetted r2, Anmoll-approved, READY TO BUILD |
+| 1 — Asset Pipeline (A0 contract → Tracks A/B/C) | NEXT — start fresh session, run BUILD KICKOFF |
+| 2 — Sprite Foundation | after L2 gate |
+| 3 — Level Design (L1/3/4/5 + Daily Challenge) | after L2 gate |
+| 4 — Juice + Polish | folded into L2 slice + later levels |
 | 5 — Playtest | NOT STARTED |
 | 6 — Submission | NOT STARTED |
 
