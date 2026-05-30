@@ -1,6 +1,6 @@
 # CLAUDE.md — Whisker Protocol
 
-**Status:** Phase-1+L2 impl plan PANEL-VETTED (r2, all 6 personas APPROVE-WITH-CHANGES) + Anmoll-approved (full-commit, no kill criterion). **READY TO BUILD — start a fresh session and execute the BUILD KICKOFF block.** (2026-05-30)
+**Status (2026-05-30, PAUSED — resume-ready):** A0 contract phase DONE · art ceiling (Billu+scene+bat) set · audio (17 SFX) · **knock system + guard AI verified (P0 fixed, 33 tests)**. Level 2 assembly WIP — interrupted, `src/entities/TileMap.ts` incomplete (won't build yet); last GREEN = commit `3bb2df4`. All 14 commits pushed to `origin/build/cat-chaos-pipeline`. **Resume:** finish assembly → run + screenshot the real game → Anmoll judges visual direction ("see the real game first"). Full resume notes: vault `…/PM-Code/knowledge/sessions/2026-05-30-whisker-protocol-build-a0-kickoff.md`.
 **Design spec (read first):** `…/Aw Vault/Projects/PM-Code/knowledge/whisker-protocol-cat-chaos-design.md`
 **Plan of record (BUILD FROM THIS):** `…/Aw Vault/Projects/PM-Code/knowledge/whisker-protocol-impl-plan-phase1-L2.md` (r2 — has asset math, A0 contract phase, L2 gate, "▶ BUILD KICKOFF — START HERE" block). Art decision: Pillow + heavy code-shading; AI-polish = gated L2 lever.
 **Prior plan layer:** `…/whisker-protocol-tasks.md` (v2 phases) · `…/whisker-protocol-cat-chaos-design.md` (design layer).
