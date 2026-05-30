@@ -1,0 +1,40 @@
+{
+  "key": "pakad-liya",
+  "name": "Pakad Liya!",
+  "cols": 20,
+  "rows": 15,
+  "tiles": [
+    "WWWWWWWWWWWWWWWWWWWW",
+    "WUUUFFFFFFFFFFFFFFFW",
+    "WUUUFFFFFFFFFFFFFFFW",
+    "WUUUFFMMFFFFFFFFFFFW",
+    "WUUUFAMMFFFFFFFFFFFW",
+    "WFFFFFFFFFUUFFFFFFFW",
+    "WFFFFFFFFFUUFFFFFFFW",
+    "WFFFFFFFFFUUFFFFFFFW",
+    "WFFFFFFFFFFFFFFFFFFW",
+    "WCCCCCFFFFFFFFFFFFFW",
+    "WCCCCCFFFFFFFFFFFFFW",
+    "WCCCCCFFFFFFFFFFFFFW",
+    "WCCCCCFFFFFFFFFFFFFW",
+    "WFFFFFFFFFFFFFFFFFFW",
+    "WWWWWWWWWWWWWWWWWWWW"
+  ],
+  "spawn": { "col": 3, "row": 7 },
+  "guards": [
+    {
+      "patrol": [
+        { "col": 14, "row": 3 },
+        { "col": 14, "row": 11 },
+        { "col": 9, "row": 11 },
+        { "col": 9, "row": 3 }
+      ]
+    }
+  ],
+  "props": [
+    { "at": { "col": 5, "row": 9 }, "type": "BRASS" },
+    { "at": { "col": 4, "row": 4 }, "type": "CLAY" }
+  ],
+  "food": [{ "col": 7, "row": 7 }],
+  "exit": { "col": 17, "row": 12 }
+}

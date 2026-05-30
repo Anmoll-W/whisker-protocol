@@ -27,4 +27,10 @@ const config: Phaser.Types.Core.GameConfig = {
   },
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Dev-only handle for headless/manual inspection of live scene state. Stripped
+// from production builds (guarded by Vite's import.meta.env.DEV).
+if (import.meta.env.DEV) {
+  (window as unknown as { __WHISKER_GAME__?: Phaser.Game }).__WHISKER_GAME__ = game;
+}

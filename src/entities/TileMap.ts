@@ -1,14 +1,25 @@
-// TileMap — programmatic tilemap builder for Whisker Protocol
-// Generates a 20×15 Chawl Kitchen layout from a 2D array of TileType values.
-// All rendering uses Phaser.GameObjects.Graphics (no external sprites).
+// TileMap — composed, lit chawl tilemap for Whisker Protocol.
+// Renders a level's grid from the `chawl` texture atlas (tools/tiles.py): every
+// cell is a richly shaded golden-hour material (plaster-over-brick wall, clay
+// flagstone, marble, dhurrie, puddle, crate, jaali), NEAREST-scaled — not flat
+// programmatic rects. Collision + the grid API are unchanged.
 
 import Phaser from 'phaser';
 import { TileType, NOISE_MULTIPLIER, PASSABLE } from '@/types/tile-types';
-import { getRNG } from '@/systems/rng';
 
 export const TILE_SIZE = 32;
 export const MAP_COLS = 20;
 export const MAP_ROWS = 15;
+
+/** TileType → frame key in the `chawl` atlas (tools/tiles.py ATLAS_ENTRIES). */
+const TILE_FRAME: Record<TileType, string> = {
+  [TileType.WALL]: 'wall',
+  [TileType.FLOOR_TILE]: 'floor_tile',
+  [TileType.FLOOR_MARBLE]: 'floor_marble',
+  [TileType.FLOOR_CARPET]: 'floor_carpet',
+  [TileType.FLOOR_WATER]: 'floor_water',
+  [TileType.FURNITURE]: 'furniture',
+};
 
 export interface Tile {
   type: TileType;
@@ -16,19 +27,6 @@ export interface Tile {
   passable: boolean;
   worldX: number;
   worldY: number;
-}
-
-/** Per-tile detail data generated once via seeded RNG; stored here so render() is deterministic. */
-interface TileDetail {
-  // FLOOR_MARBLE: 4-6 vein line segments [[x1,y1,x2,y2], ...]
-  veins?: Array<[number, number, number, number]>;
-  // FLOOR_CARPET: stipple dot offsets [[dx, dy], ...]
-  stippleDots?: Array<[number, number]>;
-  // FLOOR_WATER: two waves, each with 3 Y offsets [y0, y1, y2]
-  waveOffsets?: [number, number, number];
-  waveOffsets2?: [number, number, number];
-  // FLOOR_TILE: subtle R-channel tint offset (-10 to +10)
-  tintOffset?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -71,11 +69,25 @@ const LAYOUT: TileType[][] = [
 ];
 
 export class TileMap {
+  /** Grid dimensions — derived from the supplied layout (data-driven levels). */
+  public readonly cols: number;
+  public readonly rows: number;
+
   private tiles: Tile[][];
   private tileDetails: TileDetail[][];
   private graphics: Phaser.GameObjects.Graphics;
+  private readonly layout: TileType[][];
 
-  constructor(scene: Phaser.Scene) {
+  /**
+   * @param scene  Owning scene (for the render Graphics).
+   * @param layout Optional row-major tile grid. Defaults to the built-in Chawl
+   *               Kitchen LAYOUT so existing callers/tests keep working; level
+   *               data (LevelLoader) passes its decoded grid here.
+   */
+  constructor(scene: Phaser.Scene, layout: TileType[][] = LAYOUT) {
+    this.layout = layout;
+    this.rows = layout.length;
+    this.cols = layout[0]?.length ?? 0;
     this.tiles = this.buildTiles();
     this.tileDetails = this.generateTileDetails();
     this.graphics = scene.add.graphics();
@@ -83,14 +95,15 @@ export class TileMap {
   }
 
   private buildTiles(): Tile[][] {
-    if (LAYOUT.length !== MAP_ROWS || LAYOUT.some(r => r.length !== MAP_COLS))
-      throw new Error(`LAYOUT must be ${MAP_ROWS} rows × ${MAP_COLS} cols`);
+    const { layout, rows, cols } = this;
+    if (rows === 0 || layout.some(r => r.length !== cols))
+      throw new Error(`layout must be a non-empty rectangular grid (${rows}×${cols})`);
 
     const result: Tile[][] = [];
-    for (let row = 0; row < MAP_ROWS; row++) {
+    for (let row = 0; row < rows; row++) {
       result[row] = [];
-      for (let col = 0; col < MAP_COLS; col++) {
-        const type = LAYOUT[row]![col]!;
+      for (let col = 0; col < cols; col++) {
+        const type = layout[row]![col]!;
         result[row]![col] = {
           type,
           noiseMultiplier: NOISE_MULTIPLIER[type],
@@ -108,9 +121,9 @@ export class TileMap {
     const rng = getRNG();
     const details: TileDetail[][] = [];
 
-    for (let row = 0; row < MAP_ROWS; row++) {
+    for (let row = 0; row < this.rows; row++) {
       details[row] = [];
-      for (let col = 0; col < MAP_COLS; col++) {
+      for (let col = 0; col < this.cols; col++) {
         const tile = this.tiles[row]![col]!;
         const wx = tile.worldX;
         const wy = tile.worldY;
@@ -177,8 +190,8 @@ export class TileMap {
   private render(): void {
     const g = this.graphics;
 
-    for (let row = 0; row < MAP_ROWS; row++) {
-      for (let col = 0; col < MAP_COLS; col++) {
+    for (let row = 0; row < this.rows; row++) {
+      for (let col = 0; col < this.cols; col++) {
         const tile = this.tiles[row]![col]!;
         const detail = this.tileDetails[row]![col]!;
         const x = tile.worldX;
@@ -361,7 +374,7 @@ export class TileMap {
 
   /** Returns the Tile at the given grid coordinates, or null if out of bounds. */
   getTileAt(col: number, row: number): Tile | null {
-    if (row < 0 || row >= MAP_ROWS || col < 0 || col >= MAP_COLS) return null;
+    if (row < 0 || row >= this.rows || col < 0 || col >= this.cols) return null;
     return this.tiles[row]![col] ?? null;
   }
 

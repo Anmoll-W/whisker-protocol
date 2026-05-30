@@ -31,6 +31,7 @@ Run:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Callable, Dict, List
 
@@ -552,6 +553,83 @@ def _grid_sheet(frames: List[Image.Image], factor: int, pad: int = 8) -> Image.I
     return sheet
 
 
+# ---------------------------------------------------------------------------
+# Phaser-loadable atlas — one PNG sheet + one JSON manifest (frame-key schema)
+# ---------------------------------------------------------------------------
+#
+# The game renders Billu from this atlas (NOT the 6x preview sheets, which are
+# review-only). Frame keys follow the A0.2 contract in src/types/atlas-types.ts:
+#   <entity>_<state>_<facing>_<frame>  e.g. billu_idle_down_0, billu_bat_down_1
+#
+# All poses are authored in a single canonical facing ("down" token = the
+# authored 3-quarter view). The runtime mirrors horizontally (Phaser scaleX) for
+# left/right, so only one facing is packed — this keeps the sheet tiny.
+#
+# Frames packed into a single horizontal strip at native 24x24, deterministic
+# order. The JSON is Phaser's TexturePacker JSON-Hash format, which Phaser loads
+# via this.load.atlas('billu', 'billu.png', 'billu.json').
+
+# Canonical frame map: atlas frame key -> Billu pose name. Order is fixed so the
+# packed sheet is byte-stable across runs.
+ATLAS_FRAMES: List[tuple[str, str]] = [
+    ("billu_idle_down_0", "sit"),         # resting / standing idle
+    ("billu_idle_down_1", "idle_b"),      # breathing exhale frame
+    ("billu_creep_down_0", "creep"),      # crouch / stalk
+    ("billu_bat_down_0", "bat_windup"),   # the hero verb — wind-up
+    ("billu_bat_down_1", "bat_strike"),   # the hero verb — contact
+    ("billu_bat_down_2", "bat_watch"),    # the hero verb — recover/watch
+]
+
+
+def write_billu_atlas() -> List[Path]:
+    """Write the Phaser-loadable Billu atlas: billu.png + billu.json.
+
+    Packs the canonical game poses into one horizontal 24x24 strip and emits a
+    Phaser texture-atlas JSON keyed by the A0.2 frame-key schema. Deterministic:
+    same input poses -> identical bytes. Mirrored to public/sprites/.
+    """
+    # Budget sanity — idle (2) + bat (3) caps from shading.FRAME_BUDGET.
+    assert_within_budget("idle", 2)
+    assert_within_budget("bat", 3)
+    assert_within_budget("creep", 1)
+
+    count = len(ATLAS_FRAMES)
+    sheet = Image.new("RGBA", (FRAME * count, FRAME), TRANSPARENT)
+    frames_meta: Dict[str, dict] = {}
+
+    for i, (key, pose) in enumerate(ATLAS_FRAMES):
+        frame = draw_pose(pose)
+        assert_on_palette(frame)
+        x = i * FRAME
+        sheet.alpha_composite(frame, (x, 0))
+        frames_meta[key] = {
+            "frame": {"x": x, "y": 0, "w": FRAME, "h": FRAME},
+            "rotated": False,
+            "trimmed": False,
+            "spriteSourceSize": {"x": 0, "y": 0, "w": FRAME, "h": FRAME},
+            "sourceSize": {"w": FRAME, "h": FRAME},
+        }
+
+    manifest = {
+        "frames": frames_meta,
+        "meta": {
+            "image": "billu.png",
+            "size": {"w": FRAME * count, "h": FRAME},
+            "scale": "1",
+            "app": "billu.py",
+            "palette": "whisker-v1",
+        },
+    }
+
+    png_path = PUBLIC / "billu.png"
+    json_path = PUBLIC / "billu.json"
+    sheet.save(png_path)
+    json_path.write_text(json.dumps(manifest, indent=2))
+    print(f"Wrote {png_path} ({sheet.size[0]}x{sheet.size[1]}, {count} frames)")
+    print(f"Wrote {json_path}")
+    return [png_path, json_path]
+
+
 def write_billu_sheets(factor: int = 6) -> List[Path]:
     """Write the pose sheet, bat-sequence sheet, tail-state sheet, and natives."""
     # Frame-budget sanity: poses must fit the documented caps.
@@ -598,10 +676,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Whisker Protocol — Billu hero module")
     ap.add_argument("--sheets", action="store_true",
                     help="Write Billu pose + tail-state preview sheets")
+    ap.add_argument("--atlas", action="store_true",
+                    help="Write the Phaser-loadable Billu atlas (billu.png + billu.json)")
     args = ap.parse_args()
+    did = False
+    if args.atlas:
+        write_billu_atlas()
+        did = True
     if args.sheets:
         write_billu_sheets()
-    else:
+        did = True
+    if not did:
         ap.print_help()
 
 

@@ -1,14 +1,17 @@
-// GameScene — first playable environment: Chawl Kitchen
-// Renders the full 20×15 tilemap via TileMap and sets camera bounds to map size.
+// GameScene — the playable Level 2 vertical slice ("Pakad Liya!").
+// Fully data-driven: everything (tiles, Billu, the guard + patrol, props, the
+// laddoo, the exit) is instantiated from public/levels/level2.json via
+// LevelLoader. Authoring a new level is JSON-only — no edits here.
 
 import Phaser from 'phaser';
-import { TileMap, MAP_COLS, MAP_ROWS, TILE_SIZE } from '@/entities/TileMap';
+import { TileMap, TILE_SIZE } from '@/entities/TileMap';
 import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
 import { FoodItem } from '@/entities/FoodItem';
 import { ExitZone } from '@/entities/ExitZone';
 import { Prop } from '@/entities/Prop';
-import { PropType } from '@/types/prop-types';
+import { parseLevel, type ParsedLevel } from '@/systems/LevelLoader';
+import { type LevelDefinition } from '@/types/level-types';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
 import {
@@ -26,9 +29,11 @@ export class GameScene extends Phaser.Scene {
   private tileMap!: TileMap;
   private player!: Player;
   private guard!: Guard;
-  private foodItem!: FoodItem;
+  private foodItems: FoodItem[] = [];
   private exitZone!: ExitZone;
-  private prop!: Prop;
+  private props: Prop[] = [];
+  /** Count of laddoos still uncollected — exit unlocks at 0. */
+  private foodRemaining = 0;
   private batKey!: Phaser.Input.Keyboard.Key;
   private detectionDebugGfx!: Phaser.GameObjects.Graphics;
   private noiseDebugGfx!: Phaser.GameObjects.Graphics;
@@ -44,53 +49,60 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
-    // Build and render the Chawl Kitchen tilemap
-    this.tileMap = new TileMap(this);
+    // Reset per-run collections. Phaser reuses the scene INSTANCE across
+    // restarts (restartGame → scene.start) and re-runs create() without
+    // re-running class-field initializers, so we must clear these here or a
+    // replay would double every prop / laddoo / active noise.
+    this.foodItems = [];
+    this.props = [];
+    this.activeNoises = [];
 
-    const mapWidth = MAP_COLS * TILE_SIZE;   // 640
-    const mapHeight = MAP_ROWS * TILE_SIZE;  // 480
+    // ── Parse the level data (loaded as JSON in PreloadScene) ──────────────────
+    const raw = this.cache.json.get('level2') as LevelDefinition;
+    const level: ParsedLevel = parseLevel(raw);
 
-    // Constrain camera to the map bounds so it never shows void
+    // Build + render the tilemap from the level's decoded grid.
+    this.tileMap = new TileMap(this, level.layout);
+
+    // Constrain camera to the map bounds so it never shows void.
+    const mapWidth = level.cols * TILE_SIZE;
+    const mapHeight = level.rows * TILE_SIZE;
     this.cameras.main.setBounds(0, 0, mapWidth, mapHeight);
 
-    // Spawn Billu at tile (3,7) center — clear walkable area
-    const startX = 3 * TILE_SIZE + TILE_SIZE / 2;
-    const startY = 7 * TILE_SIZE + TILE_SIZE / 2;
-    this.player = new Player(this, startX, startY, this.tileMap);
+    // Spawn Billu at the level's spawn (world center already resolved).
+    this.player = new Player(this, level.spawn.x, level.spawn.y, this.tileMap);
     this.add.existing(this.player);
 
-    // Guard patrols a path through the kitchen — tile centers
-    const guardWaypoints = [
-      { x: 14 * TILE_SIZE + TILE_SIZE / 2, y:  3 * TILE_SIZE + TILE_SIZE / 2 },
-      { x: 14 * TILE_SIZE + TILE_SIZE / 2, y: 10 * TILE_SIZE + TILE_SIZE / 2 },
-      { x:  9 * TILE_SIZE + TILE_SIZE / 2, y: 10 * TILE_SIZE + TILE_SIZE / 2 },
-      { x:  9 * TILE_SIZE + TILE_SIZE / 2, y:  3 * TILE_SIZE + TILE_SIZE / 2 },
-    ];
-    this.guard = new Guard(this, guardWaypoints[0].x, guardWaypoints[0].y, guardWaypoints);
+    // Guard — the slice authors exactly one; instantiate with its patrol path.
+    const guardSpec = level.guards[0]!;
+    const start = guardSpec.patrol[0]!;
+    this.guard = new Guard(this, start.x, start.y, guardSpec.patrol);
     this.add.existing(this.guard);
 
-    // Laddoo food item at tile (7,7) center
-    this.foodItem = new FoodItem(this, 7 * TILE_SIZE + TILE_SIZE / 2, 7 * TILE_SIZE + TILE_SIZE / 2);
-    this.add.existing(this.foodItem);
+    // Laddoo(s) — exit unlocks once all are collected.
+    for (const f of level.food) {
+      const item = new FoodItem(this, f.x, f.y);
+      this.add.existing(item);
+      this.foodItems.push(item);
+    }
+    this.foodRemaining = this.foodItems.length;
 
-    // Exit zone at tile (17,12) center — locked until food collected
-    this.exitZone = new ExitZone(this, 17 * TILE_SIZE + TILE_SIZE / 2, 12 * TILE_SIZE + TILE_SIZE / 2);
+    // Exit zone — locked until every laddoo is collected.
+    this.exitZone = new ExitZone(this, level.exit.x, level.exit.y);
     this.add.existing(this.exitZone);
 
-    // Knockable prop — a brass vessel on a ledge near Billu's start. Batting it
-    // emits a wide noise that lures the guard (the Cat Chaos hero verb, R1.2).
-    this.prop = new Prop(
-      this,
-      5 * TILE_SIZE + TILE_SIZE / 2,
-      9 * TILE_SIZE + TILE_SIZE / 2,
-      PropType.BRASS,
-    );
-    // When the prop emits its noise (at t≈500ms post-contact), register it as an
-    // active event so the guard can hear it within its lifetime window.
-    this.prop.onNoise = (event) => {
-      this.activeNoises.push(makeActiveNoise(event));
-    };
-    this.add.existing(this.prop);
+    // Knockable props (the lure). Batting one emits a wide noise that draws the
+    // guard (the Cat Chaos hero verb, R1.2). At least one brass + one clay.
+    for (const p of level.props) {
+      const prop = new Prop(this, p.pos.x, p.pos.y, p.type);
+      // When the prop emits its noise (at t≈500ms post-contact), register it as
+      // an active event so the guard can hear it within its lifetime window.
+      prop.onNoise = (event) => {
+        this.activeNoises.push(makeActiveNoise(event));
+      };
+      this.add.existing(prop);
+      this.props.push(prop);
+    }
 
     // Bat input — B key. (Touch bat button is a later track.)
     this.batKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
@@ -114,25 +126,41 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
-    this.prop.update(delta);
+    for (const prop of this.props) prop.update(delta);
 
-    // ── Bat the prop (Cat Chaos hero verb) ─────────────────────────────────────
-    if (Phaser.Input.Keyboard.JustDown(this.batKey) && !this.prop.knocked) {
-      const dx = this.player.x - this.prop.x;
-      const dy = this.player.y - this.prop.y;
-      if (dx * dx + dy * dy <= GameScene.BAT_RANGE_PX * GameScene.BAT_RANGE_PX) {
-        this.prop.knock();
+    // ── Bat the nearest in-range prop (Cat Chaos hero verb) ────────────────────
+    // One knock per press: pick the closest un-knocked prop within bat range.
+    if (Phaser.Input.Keyboard.JustDown(this.batKey)) {
+      const range2 = GameScene.BAT_RANGE_PX * GameScene.BAT_RANGE_PX;
+      let best: Prop | null = null;
+      let bestDist2 = range2;
+      for (const prop of this.props) {
+        if (prop.knocked) continue;
+        const dx = this.player.x - prop.x;
+        const dy = this.player.y - prop.y;
+        const d2 = dx * dx + dy * dy;
+        if (d2 <= bestDist2) {
+          bestDist2 = d2;
+          best = prop;
+        }
+      }
+      if (best !== null) {
+        best.knock();
+        this.player.playBat(); // show the strike pose on Billu (visible hero verb)
       }
     }
 
     // ── Food collection ───────────────────────────────────────────────────────
-    if (!this.foodItem.collected) {
-      const dx = this.player.x - this.foodItem.x;
-      const dy = this.player.y - this.foodItem.y;
+    // Collect any laddoo in range; the exit unlocks once the last one is taken.
+    for (const item of this.foodItems) {
+      if (item.collected) continue;
+      const dx = this.player.x - item.x;
+      const dy = this.player.y - item.y;
       if (dx * dx + dy * dy < 18 * 18) {
-        this.foodItem.collect();
-        this.exitZone.unlock();
+        item.collect();
         this.guard.playerCarryingFood = true;
+        this.foodRemaining -= 1;
+        if (this.foodRemaining <= 0) this.exitZone.unlock();
       }
     }
 

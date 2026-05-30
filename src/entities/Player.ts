@@ -1,12 +1,25 @@
 // Player — Billu, the Desi street cat
-// A Phaser.GameObjects.Container holding a Graphics child that draws Billu
-// in one of three states: WALK, CROUCH, FREEZE.
-// All rendering is programmatic — no external sprites.
+// A Phaser.GameObjects.Container holding a Sprite child rendered from the Billu
+// texture atlas (public/sprites/billu.{png,json}, emitted by tools/billu.py).
+// The displayed frame is driven by state (idle / creep) plus a transient bat
+// strike pose. Facing is handled by mirroring the sprite (scaleX), matching the
+// project rule: never flip coordinates manually.
 
 import Phaser from 'phaser';
 import { TileMap } from '@/entities/TileMap';
 import { PlayerState, DEFAULT_PLAYER_CONFIG, type PlayerConfig } from '@/types/player-types';
 import { BASE_NOISE_RADIUS } from '@/systems/noise';
+
+// ── Atlas frame keys (A0.2 schema: billu_<state>_<facing>_<frame>) ─────────────
+const FRAME_IDLE = 'billu_idle_down_0';
+const FRAME_CREEP = 'billu_creep_down_0';
+const FRAME_BAT_STRIKE = 'billu_bat_down_1';
+
+/** Native atlas frame is 24px; scale up so Billu reads at the old ~60px height. */
+const SPRITE_SCALE = 2.5;
+
+/** How long the bat-strike pose holds before reverting to the state frame (ms). */
+const BAT_POSE_MS = 260;
 
 // ── Input key bindings ────────────────────────────────────────────────────────
 interface InputKeys {
@@ -26,16 +39,18 @@ export class Player extends Phaser.GameObjects.Container {
   /** Current noise level — read each frame by the surface-noise system (Task 6). */
   public noiseLevel: number = 0;
 
-  private gfx: Phaser.GameObjects.Graphics;
+  private sprite: Phaser.GameObjects.Sprite;
   private keys: InputKeys;
   private tileMap: TileMap;
   private cfg: PlayerConfig;
   private playerState: PlayerState = PlayerState.WALK;
   /** Last horizontal direction: +1 = right, -1 = left */
   private facingX: number = 1;
-  /** Track last drawn state + facing so we only redraw on change. */
-  private lastDrawnState: PlayerState | null = null;
-  private lastDrawnFacing: number | null = null;
+  /** Track last-applied frame + facing so we only re-set on change. */
+  private lastFrame: string | null = null;
+  private lastFacing: number | null = null;
+  /** ms remaining on the transient bat-strike pose (0 = not batting). */
+  private batPoseTimer = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, tileMap: TileMap, cfg: PlayerConfig = DEFAULT_PLAYER_CONFIG) {
     super(scene, x, y);
@@ -43,12 +58,12 @@ export class Player extends Phaser.GameObjects.Container {
     this.tileMap = tileMap;
     this.cfg = cfg;
 
-    // Graphics child — all cat drawing goes here
-    // Use make.graphics (not add.graphics) so it is NOT added to the scene's root
-    // display list. Only the Container registration below counts — avoids a ghost
-    // render at world origin.
-    this.gfx = scene.make.graphics({});
-    this.add(this.gfx);
+    // Sprite child rendered from the Billu atlas. Use make.sprite (not add) so it
+    // is NOT on the scene root — only the Container registration counts (avoids a
+    // ghost render at world origin), mirroring the previous Graphics pattern.
+    this.sprite = scene.make.sprite({ key: 'billu', frame: FRAME_IDLE }, false);
+    this.sprite.setScale(SPRITE_SCALE);
+    this.add(this.sprite);
 
     // Depth above tiles
     this.setDepth(10);
@@ -68,8 +83,17 @@ export class Player extends Phaser.GameObjects.Container {
       space: Phaser.Input.Keyboard.KeyCodes.SPACE,
     }) as InputKeys;
 
-    // Initial draw
-    this.redraw();
+    // Initial frame
+    this.applyFrame();
+  }
+
+  /**
+   * Show the bat-strike pose for a short beat. GameScene calls this the moment a
+   * knock connects so the hero verb is visible on Billu (not just on the prop).
+   */
+  playBat(): void {
+    this.batPoseTimer = BAT_POSE_MS;
+    this.applyFrame();
   }
 
   // ── Public update — called by GameScene.update() each frame ─────────────────
@@ -150,10 +174,11 @@ export class Player extends Phaser.GameObjects.Container {
 
     this.noiseLevel = noiseMultiplier * speedMultiplier;
 
-    // ── 5. Redraw if state or facing changed ────────────────────────────────
-    if (this.playerState !== this.lastDrawnState || this.facingX !== this.lastDrawnFacing) {
-      this.redraw();
+    // ── 5. Tick the transient bat pose, then refresh the frame on any change ──
+    if (this.batPoseTimer > 0) {
+      this.batPoseTimer -= delta;
     }
+    this.applyFrame();
   }
 
   // ── Collision ────────────────────────────────────────────────────────────────
@@ -178,301 +203,32 @@ export class Player extends Phaser.GameObjects.Container {
     return true;
   }
 
-  // ── Drawing ──────────────────────────────────────────────────────────────────
-  /** Redraws Billu entirely based on current state + facing direction. */
-  private redraw(): void {
-    this.lastDrawnState = this.playerState;
-    this.lastDrawnFacing = this.facingX;
-
-    const g = this.gfx;
-    g.clear();
-
-    // Mirror the entire Graphics object when facing left. All draw calls below
-    // use right-facing constants only (no fx multiplier). Phaser mirrors
-    // the Graphics around its origin (the container center) when scaleX = -1.
-    g.scaleX = this.facingX;
-
-    switch (this.playerState) {
-      case PlayerState.WALK:
-        this.drawWalk(g);
-        break;
-      case PlayerState.CROUCH:
-        this.drawCrouch(g);
-        break;
-      case PlayerState.FREEZE:
-        this.drawFreeze(g);
-        break;
+  // ── Frame selection ───────────────────────────────────────────────────────
+  /**
+   * Pick the Billu atlas frame for the current state (bat pose wins while its
+   * timer is live), mirror it for facing, and apply — only when something
+   * changed so we avoid redundant setFrame/setScale churn each frame.
+   */
+  private applyFrame(): void {
+    let frame: string;
+    if (this.batPoseTimer > 0) {
+      frame = FRAME_BAT_STRIKE;
+    } else if (this.playerState === PlayerState.CROUCH) {
+      // Crouch reads as the low predatory stalk pose.
+      frame = FRAME_CREEP;
+    } else {
+      // WALK + FREEZE both rest on the idle frame (FREEZE adds no extra pose in
+      // this slice — stillness is communicated by not moving).
+      frame = FRAME_IDLE;
     }
-  }
 
-  /**
-   * WALK state — upright desi street cat, 3× larger than original.
-   * Body ~36×28px, head radius 10px, proper anatomy with shadow + outline.
-   * All coordinates are right-facing; scaleX handles left-facing mirroring.
-   */
-  private drawWalk(g: Phaser.GameObjects.Graphics): void {
-    // ── Ground shadow ── drawn first (behind everything)
-    g.fillStyle(0x000000, 0.25);
-    g.fillEllipse(0, 14, 32, 8);
+    if (frame === this.lastFrame && this.facingX === this.lastFacing) return;
+    this.lastFrame = frame;
+    this.lastFacing = this.facingX;
 
-    // ── Body outline + fill ──
-    g.fillStyle(0x331100, 1);
-    g.fillRoundedRect(-20, -10, 38, 30, 5); // outline (1px bigger each side)
-    g.fillStyle(0xE8751A, 1);
-    g.fillRoundedRect(-19, -9, 36, 28, 4);  // actual body
-
-    // ── Belly patch (cream oval) ──
-    g.fillStyle(0xF5D5A0, 1);
-    g.fillEllipse(0, 3, 18, 14);
-
-    // ── Legs — 4 rounded stubs ──
-    g.fillStyle(0xC05E10, 1);
-    g.fillRoundedRect(8,   16, 8, 12, 3); // front-right
-    g.fillRoundedRect(-2,  16, 8, 12, 3); // front-left
-    g.fillRoundedRect(-8,  16, 7, 10, 3); // back-right
-    g.fillRoundedRect(-14, 16, 7, 10, 3); // back-left
-
-    // ── Tail — thick kinked line behind body ──
-    g.lineStyle(4, 0xC05E10, 1);
-    g.beginPath();
-    g.moveTo(-19, 5);
-    g.lineTo(-28, -5);
-    g.lineTo(-24, -16);
-    g.strokePath();
-
-    // ── Head outline + fill ──
-    g.fillStyle(0x331100, 1);
-    g.fillCircle(10, -22, 12); // outline (1px bigger)
-    g.fillStyle(0xF0963A, 1);
-    g.fillCircle(10, -22, 11); // actual head
-
-    // ── Head highlight (light spot) ──
-    g.fillStyle(0xFFB060, 0.4);
-    g.fillCircle(7, -26, 5);
-
-    // ── Ears — left ──
-    g.fillStyle(0xE8751A, 1);
-    g.fillTriangle(1, -33, 6, -33, 3, -44);   // outer left ear
-    g.fillStyle(0xFFAABB, 1);
-    g.fillTriangle(2, -33, 5, -33, 3, -41);   // pink inner left ear
-
-    // ── Ears — right ──
-    g.fillStyle(0xE8751A, 1);
-    g.fillTriangle(12, -33, 17, -33, 18, -44); // outer right ear
-    g.fillStyle(0xFFAABB, 1);
-    g.fillTriangle(13, -33, 16, -33, 17, -41); // pink inner right ear
-
-    // ── Eyes — bright green with dark pupils ──
-    g.fillStyle(0x22CC44, 1);
-    g.fillCircle(5, -23, 4);   // left eye (green)
-    g.fillStyle(0x111111, 1);
-    g.fillCircle(5, -23, 2);   // left pupil
-    g.fillStyle(0x22CC44, 1);
-    g.fillCircle(14, -23, 4);  // right eye (green)
-    g.fillStyle(0x111111, 1);
-    g.fillCircle(14, -23, 2);  // right pupil
-
-    // ── Nose — tiny pink triangle ──
-    g.fillStyle(0xFF7788, 1);
-    g.fillTriangle(8, -18, 12, -18, 10, -16);
-
-    // ── Whiskers ──
-    g.lineStyle(1, 0xFFDDCC, 0.6);
-    g.beginPath();
-    g.moveTo(5, -18);
-    g.lineTo(-8, -16);
-    g.strokePath();
-    g.beginPath();
-    g.moveTo(14, -18);
-    g.lineTo(27, -16);
-    g.strokePath();
-  }
-
-  /**
-   * CROUCH state — squashed body, flattened ears, slit eyes, flat tail.
-   * All coordinates are right-facing; scaleX handles left-facing mirroring.
-   */
-  private drawCrouch(g: Phaser.GameObjects.Graphics): void {
-    // ── Ground shadow ── slightly wider when crouching
-    g.fillStyle(0x000000, 0.25);
-    g.fillEllipse(0, 16, 38, 6);
-
-    // ── Body outline + fill (squashed) ──
-    g.fillStyle(0x331100, 1);
-    g.fillRoundedRect(-20, -4, 38, 22, 5); // outline
-    g.fillStyle(0xD06A18, 1);              // slightly darker when crouching
-    g.fillRoundedRect(-19, -3, 36, 20, 4); // squashed body
-
-    // ── Belly patch ──
-    g.fillStyle(0xF5D5A0, 1);
-    g.fillEllipse(0, 6, 18, 10);
-
-    // ── Legs — stubs visible below squashed body ──
-    g.fillStyle(0xC05E10, 1);
-    g.fillRoundedRect(8,   14, 8, 8, 3);
-    g.fillRoundedRect(-2,  14, 8, 8, 3);
-    g.fillRoundedRect(-8,  14, 7, 6, 3);
-    g.fillRoundedRect(-14, 14, 7, 6, 3);
-
-    // ── Tail — flat along ground ──
-    g.lineStyle(4, 0xC05E10, 1);
-    g.beginPath();
-    g.moveTo(-19, 8);
-    g.lineTo(-30, 8);
-    g.strokePath();
-
-    // ── Head outline + fill (drops lower) ──
-    g.fillStyle(0x331100, 1);
-    g.fillCircle(10, -14, 12);
-    g.fillStyle(0xD06A18, 1);
-    g.fillCircle(10, -14, 10);
-
-    // ── Head highlight ──
-    g.fillStyle(0xFFB060, 0.3);
-    g.fillCircle(7, -17, 4);
-
-    // ── Ears — flattened sideways ──
-    g.fillStyle(0xD06A18, 1);
-    // Left ear — points left
-    g.fillTriangle(1, -20, 1, -16, -8, -18);
-    g.fillStyle(0xFFAABB, 1);
-    g.fillTriangle(1, -19, 1, -17, -5, -18);
-    // Right ear — points right
-    g.fillStyle(0xD06A18, 1);
-    g.fillTriangle(18, -20, 18, -16, 27, -18);
-    g.fillStyle(0xFFAABB, 1);
-    g.fillTriangle(18, -19, 18, -17, 24, -18);
-
-    // ── Eyes — horizontal slits (crouching/stalking) ──
-    g.fillStyle(0x111111, 1);
-    g.fillRect(3, -15, 6, 2);   // left eye slit
-    g.fillRect(12, -15, 6, 2);  // right eye slit
-
-    // ── Nose ──
-    g.fillStyle(0xFF7788, 1);
-    g.fillTriangle(8, -10, 12, -10, 10, -8);
-
-    // ── Whiskers ──
-    g.lineStyle(1, 0xFFDDCC, 0.6);
-    g.beginPath();
-    g.moveTo(5, -10);
-    g.lineTo(-8, -8);
-    g.strokePath();
-    g.beginPath();
-    g.moveTo(14, -10);
-    g.lineTo(27, -8);
-    g.strokePath();
-  }
-
-  /**
-   * FREEZE state — desaturated body, squinting eyes, frost star, blue tint overlay.
-   * All coordinates are right-facing; scaleX handles left-facing mirroring.
-   */
-  private drawFreeze(g: Phaser.GameObjects.Graphics): void {
-    // ── Ground shadow ──
-    g.fillStyle(0x000000, 0.25);
-    g.fillEllipse(0, 14, 32, 8);
-
-    // ── Body outline + fill (desaturated) ──
-    g.fillStyle(0x331100, 1);
-    g.fillRoundedRect(-20, -10, 38, 30, 5);
-    g.fillStyle(0x8B6E5A, 1); // desaturated warm grey
-    g.fillRoundedRect(-19, -9, 36, 28, 4);
-
-    // ── Blue frost tint overlay ──
-    g.fillStyle(0x8899CC, 0.2);
-    g.fillRoundedRect(-19, -9, 36, 28, 4);
-
-    // ── Belly patch (muted) ──
-    g.fillStyle(0xD5BFA0, 1);
-    g.fillEllipse(0, 3, 18, 14);
-
-    // ── Legs ──
-    g.fillStyle(0x7A5E4A, 1);
-    g.fillRoundedRect(8,   16, 8, 12, 3);
-    g.fillRoundedRect(-2,  16, 8, 12, 3);
-    g.fillRoundedRect(-8,  16, 7, 10, 3);
-    g.fillRoundedRect(-14, 16, 7, 10, 3);
-
-    // ── Tail — same position as walk ──
-    g.lineStyle(4, 0x7A5E4A, 1);
-    g.beginPath();
-    g.moveTo(-19, 5);
-    g.lineTo(-28, -5);
-    g.lineTo(-24, -16);
-    g.strokePath();
-
-    // ── Head outline + fill (desaturated) ──
-    g.fillStyle(0x331100, 1);
-    g.fillCircle(10, -22, 12);
-    g.fillStyle(0x9E7E6A, 1);
-    g.fillCircle(10, -22, 11);
-
-    // ── Blue frost tint on head ──
-    g.fillStyle(0x8899CC, 0.2);
-    g.fillCircle(10, -22, 11);
-
-    // ── Ears ──
-    g.fillStyle(0x8B6E5A, 1);
-    g.fillTriangle(1, -33, 6, -33, 3, -44);
-    g.fillStyle(0xCC9999, 1); // muted pink inner
-    g.fillTriangle(2, -33, 5, -33, 3, -41);
-    g.fillStyle(0x8B6E5A, 1);
-    g.fillTriangle(12, -33, 17, -33, 18, -44);
-    g.fillStyle(0xCC9999, 1);
-    g.fillTriangle(13, -33, 16, -33, 17, -41);
-
-    // ── Eyes — squinting slits (frozen) ──
-    g.fillStyle(0x111111, 1);
-    g.fillRect(3, -24, 6, 2);   // left eye slit
-    g.fillRect(12, -24, 6, 2);  // right eye slit
-
-    // ── Nose ──
-    g.fillStyle(0xCC6677, 1);
-    g.fillTriangle(8, -18, 12, -18, 10, -16);
-
-    // ── Whiskers ──
-    g.lineStyle(1, 0xCCCCDD, 0.5);
-    g.beginPath();
-    g.moveTo(5, -18);
-    g.lineTo(-8, -16);
-    g.strokePath();
-    g.beginPath();
-    g.moveTo(14, -18);
-    g.lineTo(27, -16);
-    g.strokePath();
-
-    // ── Frost star above head — 5 lines (cross + diagonals) ──
-    const starCX = 10;
-    const starCY = -38; // above head
-    const starR = 6;
-    const diag = Math.round(starR * 0.707); // ~4px
-    g.lineStyle(1.5, 0xCCEEFF, 1);
-    // Horizontal arm
-    g.beginPath();
-    g.moveTo(starCX - starR, starCY);
-    g.lineTo(starCX + starR, starCY);
-    g.strokePath();
-    // Vertical arm
-    g.beginPath();
-    g.moveTo(starCX, starCY - starR);
-    g.lineTo(starCX, starCY + starR);
-    g.strokePath();
-    // Diagonal /
-    g.beginPath();
-    g.moveTo(starCX - diag, starCY + diag);
-    g.lineTo(starCX + diag, starCY - diag);
-    g.strokePath();
-    // Diagonal \
-    g.beginPath();
-    g.moveTo(starCX - diag, starCY - diag);
-    g.lineTo(starCX + diag, starCY + diag);
-    g.strokePath();
-    // Extra short horizontal tick (5th line — sparkle effect)
-    g.beginPath();
-    g.moveTo(starCX - 3, starCY - 3);
-    g.lineTo(starCX + 3, starCY - 3);
-    g.strokePath();
+    this.sprite.setFrame(frame);
+    // Mirror horizontally for left-facing (scaleX sign), preserving magnitude.
+    this.sprite.setScale(SPRITE_SCALE * this.facingX, SPRITE_SCALE);
   }
 
   /**
