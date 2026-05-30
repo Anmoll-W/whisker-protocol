@@ -4,6 +4,7 @@
 
 import Phaser from 'phaser';
 import { getRNG } from '@/systems/rng';
+import { restartGame } from '@/systems/scene-transition';
 
 const W = 640;
 const H = 480;
@@ -112,8 +113,6 @@ export class WinScene extends Phaser.Scene {
   }
 
   private _restart(): void {
-    this.scene.stop('WinScene');
-    this.scene.stop('GameScene');
-    this.scene.start('GameScene');
+    restartGame(this, 'WinScene');
   }
 }

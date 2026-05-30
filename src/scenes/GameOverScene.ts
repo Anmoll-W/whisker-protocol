@@ -2,6 +2,7 @@
 // Launched in parallel on top of a paused GameScene; never replaces it.
 
 import Phaser from 'phaser';
+import { restartGame } from '@/systems/scene-transition';
 
 const W = 640;
 const H = 480;
@@ -99,9 +100,6 @@ export class GameOverScene extends Phaser.Scene {
   }
 
   private _restart(): void {
-    // Scene stop/start calls are deferred by Phaser's scene manager — safe to chain here.
-    this.scene.stop('GameOverScene');
-    this.scene.stop('GameScene');
-    this.scene.start('GameScene');
+    restartGame(this, 'GameOverScene');
   }
 }

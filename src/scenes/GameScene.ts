@@ -10,6 +10,7 @@ import { ExitZone } from '@/entities/ExitZone';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
 import { computeNoise, canGuardHearNoise } from '@/systems/noise';
+import { transitionTo } from '@/systems/scene-transition';
 
 export class GameScene extends Phaser.Scene {
   private readonly DEBUG_OVERLAYS = false;
@@ -70,11 +71,10 @@ export class GameScene extends Phaser.Scene {
     this.detectionDebugGfx.setDepth(20);
     this.detectionDebugGfx.setVisible(this.DEBUG_OVERLAYS);
 
-    // Listen for guard ALERTED event — launch GameOverScene overlay
+    // Listen for guard ALERTED event — launch GameOverScene overlay.
+    // Routes through transitionTo() to prevent the WinScene/GameOverScene race.
     this.guard.on(Guard.EVENT_ALERTED, () => {
-      if (this.scene.isActive('GameOverScene')) return; // belt-and-suspenders
-      this.scene.pause();
-      this.scene.launch('GameOverScene');
+      transitionTo(this, 'GameOverScene');
     });
   }
 
@@ -97,10 +97,9 @@ export class GameScene extends Phaser.Scene {
       const dx = this.player.x - this.exitZone.x;
       const dy = this.player.y - this.exitZone.y;
       if (dx * dx + dy * dy < 24 * 24) {
-        if (!this.scene.isActive('WinScene')) {
-          this.scene.pause();
-          this.scene.launch('WinScene');
-        }
+        // Routes through transitionTo() — no-ops if GameOverScene already locked
+        // the transition on the same frame (WinScene/GameOverScene race fix).
+        transitionTo(this, 'WinScene');
       }
     }
 
