@@ -7,9 +7,17 @@ import { Player } from '@/entities/Player';
 import { Guard } from '@/entities/Guard';
 import { FoodItem } from '@/entities/FoodItem';
 import { ExitZone } from '@/entities/ExitZone';
+import { Prop } from '@/entities/Prop';
+import { PropType } from '@/types/prop-types';
 import { checkLineOfSight, DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { renderDetectionDebug, renderNoiseDebug } from '@/systems/detection-renderer';
-import { computeNoise, canGuardHearNoise } from '@/systems/noise';
+import {
+  computeNoise,
+  canGuardHearNoise,
+  makeActiveNoise,
+  tickActiveNoises,
+  type ActiveNoiseEvent,
+} from '@/systems/noise';
 import { transitionTo } from '@/systems/scene-transition';
 
 export class GameScene extends Phaser.Scene {
@@ -20,8 +28,16 @@ export class GameScene extends Phaser.Scene {
   private guard!: Guard;
   private foodItem!: FoodItem;
   private exitZone!: ExitZone;
+  private prop!: Prop;
+  private batKey!: Phaser.Input.Keyboard.Key;
   private detectionDebugGfx!: Phaser.GameObjects.Graphics;
   private noiseDebugGfx!: Phaser.GameObjects.Graphics;
+
+  /** Discrete noise events (knocked props) still audible this frame. */
+  private activeNoises: ActiveNoiseEvent[] = [];
+
+  /** Pixels — how close Billu must be to a prop to bat it. */
+  private static readonly BAT_RANGE_PX = 40;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -61,6 +77,24 @@ export class GameScene extends Phaser.Scene {
     this.exitZone = new ExitZone(this, 17 * TILE_SIZE + TILE_SIZE / 2, 12 * TILE_SIZE + TILE_SIZE / 2);
     this.add.existing(this.exitZone);
 
+    // Knockable prop — a brass vessel on a ledge near Billu's start. Batting it
+    // emits a wide noise that lures the guard (the Cat Chaos hero verb, R1.2).
+    this.prop = new Prop(
+      this,
+      5 * TILE_SIZE + TILE_SIZE / 2,
+      9 * TILE_SIZE + TILE_SIZE / 2,
+      PropType.BRASS,
+    );
+    // When the prop emits its noise (at t≈500ms post-contact), register it as an
+    // active event so the guard can hear it within its lifetime window.
+    this.prop.onNoise = (event) => {
+      this.activeNoises.push(makeActiveNoise(event));
+    };
+    this.add.existing(this.prop);
+
+    // Bat input — B key. (Touch bat button is a later track.)
+    this.batKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+
     // Noise radius debug overlay — between tiles and entities (depth 15)
     this.noiseDebugGfx = this.add.graphics();
     this.noiseDebugGfx.setDepth(15);
@@ -80,6 +114,16 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     this.player.update(delta);
+    this.prop.update(delta);
+
+    // ── Bat the prop (Cat Chaos hero verb) ─────────────────────────────────────
+    if (Phaser.Input.Keyboard.JustDown(this.batKey) && !this.prop.knocked) {
+      const dx = this.player.x - this.prop.x;
+      const dy = this.player.y - this.prop.y;
+      if (dx * dx + dy * dy <= GameScene.BAT_RANGE_PX * GameScene.BAT_RANGE_PX) {
+        this.prop.knock();
+      }
+    }
 
     // ── Food collection ───────────────────────────────────────────────────────
     if (!this.foodItem.collected) {
@@ -103,29 +147,42 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // ── Surface noise check ──────────────────────────────────────────────────
-    const noiseEvent = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);
-    if (noiseEvent !== null) {
-      const canHear = canGuardHearNoise(this.guard.guardPosition, noiseEvent);
-      if (canHear) {
-        this.guard.hearNoise({ x: this.player.x, y: this.player.y });
+    // ── Surface (footstep) noise check ─────────────────────────────────────────
+    // Continuous noise from Billu moving. hearNoise() delegates to the guard's
+    // brain: PATROL/IDLE → SUSPICIOUS, or escalate if already investigating.
+    const footstepNoise = computeNoise(this.player.x, this.player.y, this.player.noiseLevel);
+    if (footstepNoise !== null && canGuardHearNoise(this.guard.guardPosition, footstepNoise)) {
+      this.guard.hearNoise({ x: this.player.x, y: this.player.y });
+    }
+
+    // ── Prop (discrete) noise events ───────────────────────────────────────────
+    // Age out expired events, then let the guard hear any still-active one whose
+    // radius intersects his position. This is the knock → hear → investigate path.
+    this.activeNoises = tickActiveNoises(this.activeNoises, delta);
+    for (const active of this.activeNoises) {
+      if (canGuardHearNoise(this.guard.guardPosition, active.event)) {
+        this.guard.hearNoise({ x: active.event.sourceX, y: active.event.sourceY });
       }
-      // Guards already SUSPICIOUS, ALERTED, or SEARCHING are not downgraded by noise
     }
 
     // ── Detection cone check ─────────────────────────────────────────────────
+    // 4-way cone: pass the guard's facingAngle (radians), not facingX. The cone
+    // half-angles widen with escalation memory.
+    const coneConfig = {
+      ...DEFAULT_CONE_CONFIG,
+      halfAngle: this.guard.effectiveConeHalfAngle,
+      peripheralHalfAngle: this.guard.effectiveConePeripheralHalfAngle,
+    };
     const result = checkLineOfSight(
       this.guard.guardPosition,
-      this.guard.facing,
+      this.guard.facingAngle,
       { x: this.player.x, y: this.player.y },
       this.tileMap,
-      DEFAULT_CONE_CONFIG,
+      coneConfig,
     );
 
-    // Detection determines state this frame
-    this.guard.updateDetection(result, delta, { x: this.player.x, y: this.player.y });
-    // Then move in the state just set
-    this.guard.update(delta);
+    // Feed detection into the guard (brain transitions + movement in one call).
+    this.guard.tick(result, delta, { x: this.player.x, y: this.player.y });
 
     // ── Noise radius debug overlay ───────────────────────────────────────────
     if (this.DEBUG_OVERLAYS) {
@@ -139,16 +196,17 @@ export class GameScene extends Phaser.Scene {
     }
 
     // ── Detection cone debug overlay ─────────────────────────────────────────
-    // When food is carried the effective range is 20% larger — reflect that in the overlay.
+    // Reflect the escalation-widened cone (coneConfig) and the food-carry range
+    // expansion. Uses facingAngle (radians) for the 4-way cone.
     if (this.DEBUG_OVERLAYS) {
       const effectiveConeConfig = this.guard.playerCarryingFood
-        ? { ...DEFAULT_CONE_CONFIG, range: DEFAULT_CONE_CONFIG.range * 1.2 }
-        : DEFAULT_CONE_CONFIG;
+        ? { ...coneConfig, range: coneConfig.range * 1.2 }
+        : coneConfig;
       this.detectionDebugGfx.clear();
       renderDetectionDebug(
         this.detectionDebugGfx,
         this.guard.guardPosition,
-        this.guard.facing,
+        this.guard.facingAngle,
         result,
         effectiveConeConfig,
       );

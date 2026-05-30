@@ -9,20 +9,20 @@ import { type ConeConfig, type DetectionResult } from '@/systems/detection';
 /**
  * Render the detection cone debug overlay.
  *
- * @param gfx     The Phaser Graphics object to draw into (cleared by caller each frame).
+ * @param gfx       The Phaser Graphics object to draw into (cleared by caller each frame).
  * @param guardPos  Guard world-space position.
- * @param facingX   Guard facing direction (1 = right, -1 = left).
+ * @param facingAngleRad  Guard facing direction in radians (0=right, π/2=down, π=left, -π/2=up).
+ *                        4-way cone — replaces the old facingX: 1|-1 (2-way) signature.
  * @param result    Latest DetectionResult from checkLineOfSight().
  * @param cone      Cone configuration used to produce the result.
  */
 export function renderDetectionDebug(
   gfx: Phaser.GameObjects.Graphics,
   guardPos: { x: number; y: number },
-  facingX: 1 | -1,
+  facingAngleRad: number,
   result: DetectionResult,
   cone: ConeConfig,
 ): void {
-  const facingAngleRad = facingX === 1 ? 0 : Math.PI;
   const halfAngleRad = (cone.halfAngle * Math.PI) / 180;
   const peripheralHalfAngleRad = (cone.peripheralHalfAngle * Math.PI) / 180;
 
