@@ -14,3 +14,4 @@ Projects/
 
 .venv/
 __pycache__/
+dist/
