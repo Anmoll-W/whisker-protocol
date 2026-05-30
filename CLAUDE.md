@@ -17,8 +17,8 @@
 
 ## Hard constraints (locked 2026-05-25)
 
-1. **Claude does 100% via code.** No Midjourney, Scenario, Suno, ElevenLabs, Aseprite, commissioned artists, CC0 packs, subscriptions, or paid services.
-2. **Art** = Python + Pillow scripts in `tools/sprite_gen.py` → PNG sprite atlases in `public/sprites/`. Phaser loads as textures. No runtime `Graphics.fillRect`/`fillCircle` for character/tile rendering after Phase 2.
+1. **Claude authors 100% via code — including the polish.** Art + audio are entirely Claude-authored and reproducible. The **"polish lever" is an INTENSIVE CLAUDE CODE-CRAFT pass** (richer shading, detail density, more animation frames in Pillow) — NOT an external AI image service (Anmoll directive 2026-05-30: "run polish with Claude itself"). Gemini-image is OFF (quota-blocked + unnecessary). No Midjourney/Suno/ElevenLabs/commissioned artists/CC0 packs/paid services. The Pillow sheet stays canonical + deterministic.
+2. **Art pipeline** = `tools/sprite_gen.py` + `tools/shading.py` (Pillow base + Claude-crafted shading/detail, on-palette, deterministic) → PNG atlases in `public/sprites/`. Phaser loads as textures. The polish pass elevates fidelity *within* the same reproducible code pipeline. No runtime `Graphics.fillRect`/`fillCircle` for character/tile rendering after Phase 2.
 3. **Audio** = Python + numpy + scipy.io.wavfile in `tools/audio_gen.py` → WAV files in `public/audio/`. Music via Web Audio API runtime synthesis OR generated WAV loop. All Claude-authored.
 4. **Bundle ≤15MB** (Playables limit). Target <8MB. Procedural audio keeps this small.
 5. **Quality bar:** persona panel ≥9.0/10 before submission. No shipping a sub-9 build to hit a deadline.
@@ -102,6 +102,20 @@ Phase 1 (8-task core loop, completed 2026-05-25, scored 5.3/10):
 - Tilemap + Player + Guard + FoodItem + ExitZone + detection cone + state machine + game over/win overlays
 - All programmatic Graphics rendering (the primary thing being replaced in Phase 2)
 - ❌ No sprites, no audio, no HUD, no touch, no onboarding, no level select, peripheral detection bug, single level
+
+## Build review protocol (Anmoll directive, 2026-05-30)
+
+**Every build step gets cross-persona review before it is marked done. Log every 1–2 steps to the session log + daily note. Each agent contributes in their lane; everyone treats this as the best game we are building.**
+
+| Agent | Reviews for |
+|---|---|
+| **Alex** | Code quality at the highest bar — correctness, determinism, reuse, robustness |
+| **Maya** | Player-facing wording/text + visual craft (4-point art test: Culture/Mood/Readability/Craft) |
+| **Priya** | End-to-end completeness + gamification — is it a GAME (full shell + retention), not just an engine |
+| **Vera** | Spec-compliance + QA — every requirement met, nothing fabricated, P0s tracked |
+| **Sage / Rex** | Craft/systems + strategy as relevant |
+
+Worldwide rule (R3.5): game-STATE feedback is universal visual+sound; Hindi is flavor only, never load-bearing. No shorthands/abbreviations/contractions in player-facing copy.
 
 ## Documentation Standard
 
