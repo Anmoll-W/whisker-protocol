@@ -17,6 +17,7 @@ import {
 import { DEFAULT_CONE_CONFIG } from '@/systems/detection';
 import { type DetectionResult } from '@/systems/detection';
 import { GuardBrain } from '@/systems/guard-brain';
+import { normalizeHeading, headingAngle } from '@/systems/heading';
 
 /** Base search speed (px/s) — faster than normal patrol; scaled by escalation. */
 const SEARCH_SPEED = 72;
@@ -41,9 +42,19 @@ export class Guard extends Phaser.GameObjects.Container {
   /** The pure decision core — owns state, timers, escalation. */
   private brain: GuardBrain;
 
-  /** Facing as a unit vector. facingX drives sprite mirroring; both drive the cone. */
+  /**
+   * Sprite-mirroring flag ONLY (left/right). Quantized to 1|-1 to drive
+   * g.scaleX. It is deliberately NOT used to aim the detection cone — that would
+   * collapse a vertical heading to a 45° diagonal. Derived from headingX.
+   */
   private facingX: 1 | -1 = 1;
-  private facingY: number = 0;
+
+  /**
+   * True facing as a UNIT vector. This is what aims the detection cone (via
+   * facingAngle). Always normalized when set; defaults to facing right.
+   */
+  private headingX: number = 1;
+  private headingY: number = 0;
 
   private idleTimer: number = 0;
 
@@ -56,6 +67,8 @@ export class Guard extends Phaser.GameObjects.Container {
   /** Track last drawn state + facing so we only redraw on change. */
   private lastDrawnState: GuardState | null = null;
   private lastDrawnFacing: 1 | -1 | null = null;
+  private lastDrawnHeadingX: number = NaN;
+  private lastDrawnHeadingY: number = NaN;
 
   /**
    * Set from GameScene when T8 (food carry mechanic) lands.
@@ -100,9 +113,12 @@ export class Guard extends Phaser.GameObjects.Container {
     return this.facingX;
   }
 
-  /** Facing direction as radians: 0=right, π/2=down, π=left, -π/2=up */
+  /**
+   * Facing direction as radians: 0=right, π/2=down, π=left, -π/2=up.
+   * Derived from the TRUE unit heading — never from the quantized facingX.
+   */
   get facingAngle(): number {
-    return Math.atan2(this.facingY, this.facingX);
+    return headingAngle(this.headingX, this.headingY);
   }
 
   get guardState(): GuardState {
@@ -202,6 +218,10 @@ export class Guard extends Phaser.GameObjects.Container {
         this.tickIdle(delta);
         break;
       case GuardState.SUSPICIOUS:
+        // The single-knock lure: walk toward the noise. On arrival (Billu not
+        // seen) the brain flips SUSPICIOUS → SEARCHING and the look-around begins.
+        this.tickSuspicious(dt);
+        break;
       case GuardState.ALERTED:
         // Hold position — facing already set toward the threat.
         break;
@@ -210,21 +230,41 @@ export class Guard extends Phaser.GameObjects.Container {
         break;
     }
 
-    // Redraw only when state or facing changed.
-    if (this.brain.state !== this.lastDrawnState || this.facingX !== this.lastDrawnFacing) {
+    // Redraw when state OR facing changed — facingX (mirror) OR heading (cone
+    // aim, for future directional poses). Compare heading components, not the
+    // quantized facingX alone, so a vertical re-aim still triggers a redraw.
+    if (
+      this.brain.state !== this.lastDrawnState ||
+      this.facingX !== this.lastDrawnFacing ||
+      this.headingX !== this.lastDrawnHeadingX ||
+      this.headingY !== this.lastDrawnHeadingY
+    ) {
       this.redraw();
     }
   }
 
   // ── Movement ticks ────────────────────────────────────────────────────────────
 
+  /**
+   * Point the guard at a world position. Normalizes (dx,dy) so the cone aims at
+   * the true direction; falls back to the current heading for a zero vector.
+   */
   private faceToward(wx: number, wy: number): void {
-    const dx = wx - this.x;
-    const dy = wy - this.y;
-    if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
-      this.facingX = dx >= 0 ? 1 : -1;
-      this.facingY = dy;
-    }
+    this.setHeading(wx - this.x, wy - this.y);
+  }
+
+  /**
+   * Set the true unit heading (cone aim) from a raw direction vector and derive
+   * the sprite-mirroring facingX from it. A (near) zero vector keeps the current
+   * heading. Single source of truth for facing — every tick that turns the guard
+   * routes through here so the cone and the sprite never disagree.
+   */
+  private setHeading(dx: number, dy: number): void {
+    const h = normalizeHeading(dx, dy);
+    if (h === null) return;
+    this.headingX = h.x;
+    this.headingY = h.y;
+    this.facingX = h.x >= 0 ? 1 : -1;
   }
 
   private tickPatrol(dt: number): void {
@@ -248,10 +288,7 @@ export class Guard extends Phaser.GameObjects.Container {
     this.x += nx * this.cfg.patrolSpeed * dt;
     this.y += ny * this.cfg.patrolSpeed * dt;
 
-    if (Math.abs(nx) > 0.001 || Math.abs(ny) > 0.001) {
-      this.facingX = nx >= 0 ? 1 : -1;
-      this.facingY = ny;
-    }
+    this.setHeading(nx, ny);
   }
 
   private tickIdle(delta: number): void {
@@ -259,6 +296,46 @@ export class Guard extends Phaser.GameObjects.Container {
     if (this.idleTimer <= 0) {
       this.waypointIndex = (this.waypointIndex + 1) % this.waypoints.length;
       this.brain.forceState(GuardState.PATROL);
+    }
+  }
+
+  /**
+   * Walk toward `target` at the escalation-scaled search speed, aiming the
+   * heading along the path. Returns true once within SEARCH_REACH_THRESHOLD.
+   * Shared by SUSPICIOUS (approach the noise) and SEARCHING (walk to the spot).
+   */
+  private walkToward(target: { x: number; y: number }, dt: number): boolean {
+    const dx = target.x - this.x;
+    const dy = target.y - this.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist <= SEARCH_REACH_THRESHOLD) return true;
+
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const speed = SEARCH_SPEED * this.brain.searchSpeedMult;
+    this.x += nx * speed * dt;
+    this.y += ny * speed * dt;
+    this.setHeading(nx, ny);
+    return false;
+  }
+
+  /**
+   * SUSPICIOUS = approach the noise (the single-knock lure). Walk toward
+   * lastKnownPosition; on arrival with Billu unseen, hand off to the brain which
+   * flips SUSPICIOUS → SEARCHING. A sighting mid-approach is handled by the brain
+   * in updateDetection() (→ ALERTED) before this ever runs.
+   */
+  private tickSuspicious(dt: number): void {
+    const lastKnown = this.brain.lastKnownPosition;
+    // No target to investigate (shouldn't happen via the lure path) — let the
+    // brain's cooldown run its course; nothing to walk to.
+    if (lastKnown === null) return;
+
+    if (this.walkToward(lastKnown, dt)) {
+      // Arrived at the noise, Billu not in sight → begin the look-around search.
+      this.brain.reachedInvestigation();
+      this.searchPivotTimer = 0;
     }
   }
 
@@ -272,24 +349,9 @@ export class Guard extends Phaser.GameObjects.Container {
     }
 
     if (!this.brain.searchReached) {
-      const dx = lastKnown.x - this.x;
-      const dy = lastKnown.y - this.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist <= SEARCH_REACH_THRESHOLD) {
+      if (this.walkToward(lastKnown, dt)) {
         this.brain.markSearchReached();
         this.searchPivotTimer = 0;
-      } else {
-        const nx = dx / dist;
-        const ny = dy / dist;
-        const speed = SEARCH_SPEED * this.brain.searchSpeedMult;
-        this.x += nx * speed * dt;
-        this.y += ny * speed * dt;
-
-        if (Math.abs(nx) > 0.001 || Math.abs(ny) > 0.001) {
-          this.facingX = nx >= 0 ? 1 : -1;
-          this.facingY = ny;
-        }
       }
     } else {
       // At the position — "look around" by pivoting. The countdown + the
@@ -298,8 +360,8 @@ export class Guard extends Phaser.GameObjects.Container {
       this.searchPivotTimer += delta;
       if (this.searchPivotTimer >= SEARCH_PIVOT_INTERVAL) {
         this.searchPivotTimer -= SEARCH_PIVOT_INTERVAL;
-        this.facingX = this.facingX === 1 ? -1 : 1;
-        this.facingY = 0;
+        // Flip the horizontal heading to "look around" the spot.
+        this.setHeading(-this.facingX, 0);
       }
     }
 
@@ -313,6 +375,8 @@ export class Guard extends Phaser.GameObjects.Container {
   private redraw(): void {
     this.lastDrawnState = this.brain.state;
     this.lastDrawnFacing = this.facingX;
+    this.lastDrawnHeadingX = this.headingX;
+    this.lastDrawnHeadingY = this.headingY;
 
     const g = this.gfx;
     g.clear();

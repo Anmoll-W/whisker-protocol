@@ -76,6 +76,9 @@ export class Prop extends Phaser.GameObjects.Container {
 
   /** Advance the fall + noise timeline. Call from GameScene.update() each frame. */
   update(delta: number): void {
+    // Destroyed (consumed) props leave the update loop — guard against a stray
+    // post-destroy tick from a caller still holding the reference.
+    if (!this.active) return;
     if (this.phase === PropPhase.IDLE) return;
 
     this.elapsed += delta;
@@ -95,6 +98,8 @@ export class Prop extends Phaser.GameObjects.Container {
     if (!this.noiseEmitted && this.elapsed >= NOISE_EMIT_DELAY_MS) {
       this.noiseEmitted = true;
       const spec = PROP_CLASS[this.propType];
+      // Capture the emit position BEFORE any destroy so the noise fires from the
+      // settled spot even when the prop is consumed on the same frame.
       const event: NoiseEvent = {
         sourceX: this.x,
         sourceY: this.y,
@@ -105,8 +110,11 @@ export class Prop extends Phaser.GameObjects.Container {
       this.onNoise?.(event);
 
       if (spec.consumedOnContact) {
-        // Clay shatters — remove it once it has done its job (made the noise).
-        this.setVisible(false);
+        // Clay shatters — REMOVE it from the scene once it has done its job (made
+        // the noise). destroy() takes it out of the update loop and frees its
+        // Graphics; setVisible(false) alone would leave it ticking forever.
+        this.destroy();
+        return;
       }
     }
   }

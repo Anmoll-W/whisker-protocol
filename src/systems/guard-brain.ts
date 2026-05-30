@@ -8,13 +8,16 @@
 //
 // State machine (matches the design stateDiagram exactly):
 //
-//   PATROL ──hears noise OR peripheral glimpse──▶ SUSPICIOUS
+//   PATROL ──hears noise OR peripheral glimpse──▶ SUSPICIOUS (walk to the noise)
 //   PATROL ──sees Billu in main cone (full fill)─▶ ALERTED
-//   SUSPICIOUS ──reaches noise, no Billu──▶ SEARCHING
-//   SUSPICIOUS ──sees Billu while investigating──▶ ALERTED
-//   SUSPICIOUS ──investigate timer expires, clean──▶ PATROL
+//   SUSPICIOUS ──reaches noise, no Billu (entity calls reachedInvestigation)──▶ SEARCHING
+//   SUSPICIOUS ──sees Billu while approaching──▶ ALERTED
 //   SEARCHING ──sees Billu──▶ ALERTED
 //   SEARCHING ──search timer expires, clean──▶ PATROL
+//
+//   NOTE: SUSPICIOUS does NOT time out to PATROL. It is the "approach the noise"
+//   phase and persists until the guard arrives (→ SEARCHING) or sights Billu
+//   (→ ALERTED). The clean return to PATROL is owned by SEARCHING's countdown.
 //   ALERTED ──catches Billu (life)──▶ (terminal, via onAlerted)
 //   ALERTED ──loses sight of Billu──▶ SEARCHING
 //
@@ -35,7 +38,6 @@
 import {
   GuardState,
   SUSPICIOUS_TO_ALERTED_MS,
-  SUSPICIOUS_COOLDOWN_MS,
   SEARCH_DURATION_MS,
   PERIPHERAL_TO_SUSPICIOUS_MS,
   PERIPHERAL_DECAY_FACTOR,
@@ -65,9 +67,6 @@ export class GuardBrain {
    * periphery, and resets to 0 on every state change.
    */
   private _peripheralTime = 0;
-
-  /** ms continuously out of all cones (SUSPICIOUS cooldown back to PATROL). */
-  private _cooldownTimer = 0;
 
   /** ms spent searching after reaching lastKnownPosition. */
   private _searchTimer = 0;
@@ -146,6 +145,18 @@ export class GuardBrain {
     this._searchTimer = 0;
   }
 
+  /**
+   * Entity hook: the guard walking the single-knock lure has REACHED the noise
+   * (lastKnownPosition) without seeing Billu. Transition SUSPICIOUS → SEARCHING
+   * and begin the look-around countdown. No-op if not currently SUSPICIOUS (a
+   * sighting may have already escalated him to ALERTED mid-approach).
+   */
+  reachedInvestigation(): void {
+    if (this._state !== GuardState.SUSPICIOUS) return;
+    this.setState(GuardState.SEARCHING);
+    this.markSearchReached();
+  }
+
   // ── Noise hearing + escalation memory (R1.5) ──────────────────────────────────
 
   /**
@@ -163,21 +174,22 @@ export class GuardBrain {
     this._msSinceNoise = 0;
 
     if (s === GuardState.PATROL || s === GuardState.IDLE) {
-      // Single-knock lure: open the investigation. Escalation starts at 0.
+      // Single-knock lure: open the investigation. Escalation starts at 0. The
+      // guard now WALKS to lastKnownPosition while SUSPICIOUS (entity-driven),
+      // then flips to SEARCHING on arrival via reachedInvestigation().
       this._mainConeTime = 0;
-      this._cooldownTimer = 0;
       this.setState(GuardState.SUSPICIOUS);
       return;
     }
 
     // Already investigating (SUSPICIOUS or SEARCHING): escalate, capped.
     this._escalation = Math.min(this._escalation + 1, MAX_ESCALATION_LEVEL);
-    // A fresh noise renews the investigation: keep him SUSPICIOUS and re-aim.
+    // A fresh noise while SEARCHING renews the hunt: re-target lastKnownPosition
+    // (set above) and re-approach it (clear "reached" so the entity walks again).
     if (s === GuardState.SEARCHING) {
       this._searchReached = false;
       this._searchTimer = 0;
     }
-    this._cooldownTimer = 0;
   }
 
   // ── Per-frame detection-driven state machine ──────────────────────────────────
@@ -215,7 +227,6 @@ export class GuardBrain {
       this.lastKnownPosition = { x: playerPos.x, y: playerPos.y };
       this._mainConeTime += delta;
       this._peripheralTime = 0;
-      this._cooldownTimer = 0;
 
       const cur = this._state;
 
@@ -260,7 +271,6 @@ export class GuardBrain {
       ) {
         this.lastKnownPosition = { x: playerPos.x, y: playerPos.y };
         this._mainConeTime = 0;
-        this._cooldownTimer = 0;
         this.setState(GuardState.SUSPICIOUS); // resets _peripheralTime to 0
         return;
       }
@@ -273,15 +283,16 @@ export class GuardBrain {
       );
     }
 
-    // SUSPICIOUS cooldown → PATROL (clean return).
+    // SUSPICIOUS out of cone: the guard is APPROACHING the noise. He persists
+    // SUSPICIOUS until the entity reports arrival (reachedInvestigation() →
+    // SEARCHING) or a sighting escalates him (→ ALERTED above). The old 500ms
+    // cooldown-to-PATROL revert was the lure bug — it froze him for 500ms and
+    // sent him back to patrol having never moved to the noise. Removed.
+    //
+    // The main-cone dwell accumulator still drains so a glimpse that ends does
+    // not bank toward ALERTED while he walks.
     if (this._state === GuardState.SUSPICIOUS) {
-      this._cooldownTimer += delta;
-      if (this._cooldownTimer >= SUSPICIOUS_COOLDOWN_MS) {
-        this._mainConeTime = 0;
-        this._cooldownTimer = 0;
-        this._escalation = 0;
-        this.setState(GuardState.PATROL);
-      }
+      this._mainConeTime = 0;
       return;
     }
 
@@ -297,7 +308,6 @@ export class GuardBrain {
         this._searchTimer += delta;
         if (this._searchTimer >= this.effectiveSearchDurationMs) {
           this._mainConeTime = 0;
-          this._cooldownTimer = 0;
           this._escalation = 0;
           this.setState(GuardState.PATROL);
         }
@@ -326,7 +336,6 @@ export class GuardBrain {
     this._searchTimer = 0;
     this._searchReached = false;
     this._mainConeTime = 0;
-    this._cooldownTimer = 0;
     this._alertedEventFired = false;
     this.setState(GuardState.SEARCHING);
   }
