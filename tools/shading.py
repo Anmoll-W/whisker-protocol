@@ -357,7 +357,7 @@ def assert_within_budget(state: str, frame_count: int) -> None:
 # 96x64 (r2) to carry a jaali grill, a directional light pool, and two distinct
 # props without crowding — the art contract Anmoll gates on.
 REF_W, REF_H = 96, 64
-GOLDEN_SHA = "e765ca51f37b946a5a568de68a651fc642f4be74cc126de593eb59f6baa17c3c"
+GOLDEN_SHA = "cc43962214fd25f5bf5a3ae70d9851f95ab6bf73d33e0d50f5ca315984f74834"
 
 # Wall ramp tones, pre-resolved with explicit ramps so no ambiguous step leaks.
 _WALL_HI = lit("wall_mid", ramp="wall")      # wall_hi
@@ -400,16 +400,20 @@ def _diagonal_falloff_wall(img: Image.Image, x1: int, y1: int) -> None:
     for y in range(0, y1 + 1):
         for x in range(0, x1 + 1):
             d = x + y * 1.3  # weight y so light reads as coming from above-left
-            # Base tone index along the wall ramp: 1=mid 2=hi (3=floor_clay rare).
-            if d < 40:
+            # Directional falloff walked DOWN the wall ramp as one smooth gradient.
+            # The upper-left -> mid transition is spread over a WIDE 30px Bayer
+            # ramp (d 28..58) instead of a tight 12px band, so the dither reads as
+            # a calm golden gradient rather than a busy stripe. The coverage falls
+            # linearly across the whole width, so the dither density eases evenly.
+            if d < 28:
                 base = "wall_hi"
-            elif d < 52:
-                base = bayer_pick(x, y, coverage=(52 - d) / 12.0,
+            elif d < 58:
+                base = bayer_pick(x, y, coverage=(58 - d) / 30.0,
                                   dark="wall_mid", light="wall_hi")
-            elif d < 84:
+            elif d < 80:
                 base = "wall_mid"
-            elif d < 96:
-                base = bayer_pick(x, y, coverage=(96 - d) / 12.0,
+            elif d < 98:
+                base = bayer_pick(x, y, coverage=(98 - d) / 18.0,
                                   dark="wall_shadow", light="wall_mid")
             else:
                 base = "wall_shadow"
@@ -681,6 +685,28 @@ def _draw_matka(img: Image.Image, cx: int, by: int) -> None:
                 rr, gg, bb, aa = img.load()[cx + dx, by_belly + dy]
                 if name_of((rr, gg, bb)) == "wall_shadow":
                     px(img, cx + dx, by_belly + dy, "outline")
+    # Rim-light: trace a 1px lit edge along the UPPER-LEFT of the belly so the
+    # pot lifts off the dark corner shadow (a catch of golden-hour key grazing
+    # the clay rim). For each upper-left belly pixel whose up-left 4-neighbour is
+    # outside the belly, step it one tone lighter along the wall ramp.
+    px_data = img.load()
+
+    def _in_belly(dx: int, dy: int) -> bool:
+        return dx * dx + (dy * dy * 5) // 4 <= rb * rb
+
+    for dy in range(-rb, 1):
+        for dx in range(-rb, 1):
+            if not _in_belly(dx, dy):
+                continue
+            # an edge pixel iff the neighbour further up-left leaves the belly.
+            if _in_belly(dx - 1, dy) and _in_belly(dx, dy - 1):
+                continue
+            rr, gg, bb, _ = px_data[cx + dx, by_belly + dy]
+            cur = name_of((rr, gg, bb))
+            if cur in _RAMP_OF and cur not in _AMBIGUOUS:
+                px(img, cx + dx, by_belly + dy, step_lighter(cur, 1))
+            elif cur in _AMBIGUOUS:
+                px(img, cx + dx, by_belly + dy, step_lighter(cur, 1, ramp="wall"))
     # AO contact row under the pot.
     for dx in range(-3, 4):
         px(img, cx + dx, by + 1, "outline")

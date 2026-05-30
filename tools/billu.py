@@ -77,13 +77,18 @@ def _outline_silhouette(img: Image.Image) -> None:
         px(img, x, y, "outline")
 
 
-def _eyes_and_face(img: Image.Image, ox: int, oy: int, *, alert: bool = False) -> None:
+def _eyes_and_face(img: Image.Image, ox: int, oy: int, *, alert: bool = False,
+                   track: int = 0) -> None:
     """The face: signature saturated green eyes, pink nose, fine muzzle.
 
     `alert=True` widens the eyes (one extra lit-green pixel each) and lifts the
     pupils — the universal 'Billu has noticed something' read that pairs with the
     alerted/puffed tail. Kept identical across poses otherwise so Billu's
     expression is recognisably HIM.
+
+    `track` shifts the PUPILS only, eyes-following-the-prop for the watch beat:
+    +1 = down-right (prop fell to Billu's right). The iris stays put; only the
+    dark pupil + catch-light move, so it reads as a glance, not a head turn.
     """
     # Eye sockets (slight dark recess so the green pops).
     rect(img, ox + 7, oy + 5, ox + 9, oy + 7, "fur_dark")
@@ -94,9 +99,11 @@ def _eyes_and_face(img: Image.Image, ox: int, oy: int, *, alert: bool = False) -
     if alert:
         px(img, ox + 9, oy + 5, "eye_green")
         px(img, ox + 13, oy + 5, "eye_green")
-    # Pupils + a single ui_white catch-light (life in the eye).
-    px(img, ox + 8, oy + 6, "outline")
-    px(img, ox + 12, oy + 6, "outline")
+    # Pupils + a single ui_white catch-light (life in the eye). `track` slides
+    # the pupil to the down-right corner of the iris when watching a falling prop.
+    pdx, pdy = (1, 1) if track > 0 else (0, 0)
+    px(img, ox + 8 + pdx, oy + 6 + pdy - (1 if track else 0), "outline")
+    px(img, ox + 12 + pdx, oy + 6 + pdy - (1 if track else 0), "outline")
     px(img, ox + 7, oy + 5, "ui_white")
     px(img, ox + 11, oy + 5, "ui_white")
     # Pink nose + muzzle.
@@ -106,13 +113,20 @@ def _eyes_and_face(img: Image.Image, ox: int, oy: int, *, alert: bool = False) -
     px(img, ox + 10, oy + 9, "fur_dark")
 
 
-def _head(img: Image.Image, ox: int, oy: int, *, alert: bool = False) -> None:
+def _head(img: Image.Image, ox: int, oy: int, *, alert: bool = False,
+          dx: int = 0, dy: int = 0, ears_forward: bool = False,
+          track: int = 0) -> None:
     """Rounded oversized head (cute-anime read), key-lit upper-left.
 
     Dark crown (fur_dark, the top-of-head shadow), a fur_light forehead/cheek on
     the upper-left key side, a Bayer flank turn down the right cheek to fur_dark,
     and lit/shadowed ears with pink inners. Corners rounded by clearing pixels.
+
+    `dx`/`dy` shift the whole head — used by creep (head pushed low + forward) and
+    the bat wind-up (head tips toward the prop). `ears_forward=True` pins the ears
+    flat-forward over the brow (the predatory / committed read) instead of upright.
     """
+    ox, oy = ox + dx, oy + dy
     rect(img, ox + 5, oy + 1, ox + 14, oy + 10, "fur_mid")
     for (cx, cy) in [(ox + 5, oy + 1), (ox + 14, oy + 1),
                      (ox + 5, oy + 10), (ox + 14, oy + 10)]:
@@ -124,24 +138,79 @@ def _head(img: Image.Image, ox: int, oy: int, *, alert: bool = False) -> None:
         for x in range(ox + 11, ox + 14):
             px(img, x, y, bayer_pick(x, y, coverage=0.4,
                                      dark="fur_dark", light="fur_mid"))
-    # Ears: lit left, shadowed right, pink inners.
-    rect(img, ox + 4, oy - 1, ox + 6, oy + 1, "fur_light")
-    rect(img, ox + 13, oy - 1, ox + 15, oy + 1, "fur_dark")
-    px(img, ox + 5, oy, "ear_pink")
-    px(img, ox + 14, oy, "ear_pink")
-    _eyes_and_face(img, ox, oy, alert=alert)
+    if ears_forward:
+        # Ears swept forward + low over the brow — predator focus / commitment.
+        rect(img, ox + 5, oy + 1, ox + 7, oy + 2, "fur_light")   # lit left ear forward
+        rect(img, ox + 12, oy + 1, ox + 14, oy + 2, "fur_dark")  # shadow right ear forward
+        px(img, ox + 6, oy + 2, "ear_pink")
+        px(img, ox + 13, oy + 2, "ear_pink")
+    else:
+        # Ears: lit left, shadowed right, pink inners, upright.
+        rect(img, ox + 4, oy - 1, ox + 6, oy + 1, "fur_light")
+        rect(img, ox + 13, oy - 1, ox + 15, oy + 1, "fur_dark")
+        px(img, ox + 5, oy, "ear_pink")
+        px(img, ox + 14, oy, "ear_pink")
+    _eyes_and_face(img, ox, oy, alert=alert, track=track)
 
 
-def _body(img: Image.Image, ox: int, oy: int, *, squash: int = 0, loaf: bool = False) -> None:
-    """Seated teardrop body with a cream chest blaze, key-lit upper-left.
+def _body(img: Image.Image, ox: int, oy: int, *, squash: int = 0,
+          loaf: bool = False, creep: bool = False) -> None:
+    """Billu's torso, drawn in one of three distinct silhouettes (key-lit upper-left).
 
-    `squash` (0 or 1) lowers the shoulder line 1px for the breathing/loaf read
-    (snap, never ease). `loaf=True` tucks the paws under and widens the base so
-    Billu reads as a compact loaf. Fur: mid core, fur_light lit shoulder, a Bayer
-    turn to fur_dark on the lower-right hip, belly_cream chest.
+    The STANCE drives the silhouette so each pose reads at a glance:
+      - default (idle): tall seated teardrop — shoulders rise, narrow base.
+      - `loaf=True`    : a compact low brick — shoulders flattened, base widened
+                         to the full frame, paws tucked as a single cream bar. No
+                         neck gap (the head sits straight down onto it).
+      - `creep=True`   : a long low predatory crouch — the torso stretches
+                         horizontally and drops, belly skimming the floor, with a
+                         lit haunch at the rear-right. Unmistakably a stalking cat.
+
+    `squash` (0 or 1) lowers the shoulder line 1px for the breathing read on idle.
+    Fur: mid core, fur_light lit shoulder, a Bayer turn to fur_dark on the
+    shadow-side hip, belly_cream chest/belly.
     """
+    if creep:
+        # Long low stalk: a horizontal slab from the floor up only ~6px, stretched
+        # wide so the silhouette is clearly longer-than-tall (the opposite of idle).
+        base = oy + 21
+        rect(img, ox + 2, base - 5, ox + 18, base, "fur_mid")        # long low torso
+        rect(img, ox + 2, base - 6, ox + 16, base - 5, "fur_mid")    # rounded back line
+        # Lit shoulder/back along the upper-left edge (key grazes the spine).
+        rect(img, ox + 2, base - 6, ox + 9, base - 5, "fur_light")
+        rect(img, ox + 2, base - 5, ox + 4, base - 2, "fur_light")
+        # Lit haunch lump at the rear-right (the coiled back leg) — reads as power.
+        rect(img, ox + 15, base - 6, ox + 18, base - 2, "fur_mid")
+        px(img, ox + 15, base - 6, "fur_light")
+        # Bayer flank turn down the shadow-side belly (mid -> dark).
+        for y in range(base - 3, base + 1):
+            for x in range(ox + 11, ox + 18):
+                px(img, x, y, bayer_pick(x, y, coverage=0.3,
+                                         dark="fur_dark", light="fur_mid"))
+        # Low cream belly skimming the floor.
+        rect(img, ox + 6, base - 2, ox + 13, base, "belly_cream")
+        # Stretched-forward front paws reaching low-left (the stalk lead).
+        rect(img, ox + 2, base, ox + 4, base, "belly_cream")
+        rect(img, ox + 7, base, ox + 9, base, "belly_cream")
+        return
+
     top = oy + 12 + squash
-    # Core teardrop.
+    if loaf:
+        # Compact brick: flatten the shoulder rise and widen the base full-frame.
+        rect(img, ox + 3, top + 1, ox + 17, oy + 21, "fur_mid")      # wide low body
+        rect(img, ox + 4, top, ox + 16, top + 1, "fur_mid")          # gently domed top
+        rect(img, ox + 3, top + 1, ox + 8, top + 5, "fur_light")     # lit left flank
+        for y in range(top + 3, oy + 22):
+            for x in range(ox + 12, ox + 18):
+                px(img, x, y, bayer_pick(x, y, coverage=0.3,
+                                         dark="fur_dark", light="fur_mid"))
+        rect(img, ox + 7, top + 3, ox + 12, oy + 21, "belly_cream")  # cream chest
+        px(img, ox + 7, top + 3, "fur_mid")
+        px(img, ox + 12, top + 3, "fur_mid")
+        rect(img, ox + 5, oy + 20, ox + 14, oy + 21, "belly_cream")  # tucked loaf paws (one bar)
+        return
+
+    # Default seated teardrop.
     rect(img, ox + 4, top, ox + 16, oy + 21, "fur_mid")
     rect(img, ox + 5, top - 2, ox + 15, top, "fur_mid")          # shoulders rise
     # Lit upper-left shoulder (key).
@@ -156,11 +225,8 @@ def _body(img: Image.Image, ox: int, oy: int, *, squash: int = 0, loaf: bool = F
     px(img, ox + 7, top + 2, "fur_mid")                          # soften patch corners
     px(img, ox + 12, top + 2, "fur_mid")
     # Front paws.
-    if loaf:
-        rect(img, ox + 6, oy + 20, ox + 13, oy + 21, "belly_cream")  # tucked loaf paws
-    else:
-        rect(img, ox + 5, oy + 20, ox + 7, oy + 21, "belly_cream")
-        rect(img, ox + 10, oy + 20, ox + 12, oy + 21, "belly_cream")
+    rect(img, ox + 5, oy + 20, ox + 7, oy + 21, "belly_cream")
+    rect(img, ox + 10, oy + 20, ox + 12, oy + 21, "belly_cream")
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +309,15 @@ def _tail(img: Image.Image, ox: int, oy: int, mood: str) -> None:
                                (15, 10, "fur_light"), (14, 11, "fur_mid")]:
             px(img, ox + dx, oy + dy, tone)
         px(img, ox + 14, oy + 12, "fur_dark")                # underside of the hook
+    elif mood == "low":
+        # tail held LOW + straight out behind, skimming the floor — the stalk
+        # counterbalance. Reads as tension held flat, the opposite of the high
+        # safe tail. A near-horizontal taper trailing off the rear haunch.
+        path = [(17, 19), (19, 19), (20, 18), (21, 18), (22, 17)]
+        lit_idx = {0, 1, 2}
+        for i, (dx, dy) in enumerate(path):
+            seg(ox + dx, oy + dy, lit=i in lit_idx)
+        px(img, ox + 22, oy + 16, "fur_mid")                 # tip flicks up 1px (live)
     elif mood == "safe":
         # a tall, THIN, elegant 'question-mark' high above — all-clear. Kept 1px
         # (no bushy doubling) so it never reads as the puffed alarm tail.
@@ -263,16 +338,24 @@ def _tail(img: Image.Image, ox: int, oy: int, mood: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _assemble(*, squash: int, loaf: bool, tail_mood: str, alert: bool,
+              creep: bool = False, head_dx: int = 0, head_dy: int = 0,
+              ears_forward: bool = False, track: int = 0,
               ox: int = 0, oy: int = 1) -> Image.Image:
     """Compose one Billu frame from the parts and finish it (outline + AO)."""
     img = new_frame(FRAME, FRAME)
     _tail(img, ox, oy, tail_mood)                # tail first (body overlaps its root)
-    _body(img, ox, oy, squash=squash, loaf=loaf)
-    _head(img, ox, oy, alert=alert)
+    _body(img, ox, oy, squash=squash, loaf=loaf, creep=creep)
+    _head(img, ox, oy, alert=alert, dx=head_dx, dy=head_dy,
+          ears_forward=ears_forward, track=track)
     _outline_silhouette(img)
-    # Floor-contact AO under the seated base (one tone darker along the fur ramp).
-    ambient_occlusion(img, (ox + 4, oy + 12, ox + 16, oy + 21),
-                      contact_edges=(False, False, True, False))
+    # Floor-contact AO under the base (one tone darker along the fur ramp). The
+    # creep stance sits lower + longer, so its contact band is wider and shallower.
+    if creep:
+        ambient_occlusion(img, (ox + 2, oy + 19, ox + 18, oy + 21),
+                          contact_edges=(False, False, True, False))
+    else:
+        ambient_occlusion(img, (ox + 4, oy + 12, ox + 16, oy + 21),
+                          contact_edges=(False, False, True, False))
     assert_on_palette(img)
     return img
 
@@ -295,28 +378,126 @@ def _pose_loaf() -> Image.Image:
     return _assemble(squash=1, loaf=True, tail_mood="idle", alert=False)
 
 
-def _pose_prebat() -> Image.Image:
-    return _assemble(squash=0, loaf=False, tail_mood="flick", alert=True)
+def _pose_creep() -> Image.Image:
+    # creep / sneak: long low predatory crouch, head pushed forward + low, ears
+    # swept flat, tail held low and straight behind. A completely different
+    # silhouette from the upright idle — stretched horizontal, belly to floor.
+    return _assemble(squash=0, loaf=False, tail_mood="low", alert=True,
+                     creep=True, head_dx=-2, head_dy=4, ears_forward=True)
 
 
-def _pose_bat() -> Image.Image:
-    # bat strike: a raised lit paw thrown to the upper-right + alert face.
-    img = _assemble(squash=0, loaf=False, tail_mood="flick", alert=True)
-    # Extend a striking front leg + paw up-and-right — the hero verb made visible.
-    # A lit cream foreleg thrust out from the chest with a rounded paw at the tip,
-    # outlined so it reads as a deliberate swat, not a stray pixel run.
-    leg = [(13, 19), (14, 18), (15, 17), (16, 16), (17, 15)]   # foreleg
+# --- The bat hero verb — a 3-frame sequence (FRAME_BUDGET["bat"] == 3) --------
+# Each frame is built to the locked choreography (whisker-protocol-bat-choreography):
+# wind-up (coil/anticipation) -> strike (the contact frame) -> watch (eye-track
+# the fallen prop). The runtime cycles these at the documented 60fps timings;
+# here we author the three KEY frames the cycle holds on.
+
+def _pose_bat_windup() -> Image.Image:
+    """Anticipation peak (choreography frames 3-7): Billu COILS to strike.
+
+    Weight shifts back + down (micro-crouch squash), the head tips toward the
+    prop with ears swept forward (commitment), pupils dilated alert, and the tail
+    whips up into the forward 'flick' hook (R4.1 'tail flicks before a bat'). The
+    striking paw is drawn cocked back against the chest — loaded, not yet thrown.
+    A viewer reads 'about to happen' before the strike lands.
+    """
+    img = _assemble(squash=1, loaf=False, tail_mood="flick", alert=True,
+                    head_dx=-1, head_dy=1, ears_forward=True)
+    # Cocked paw: pulled in against the chest, low — the loaded spring.
+    rect(img, 10, 18, 12, 19, "belly_cream")
+    px(img, 10, 18, "fur_light")                               # lit upper edge
+    px(img, 9, 19, "outline")                                  # crisp inner edge
+    px(img, 12, 20, "outline")
+    assert_on_palette(img)
+    return img
+
+
+def _strike_body(img: Image.Image, ox: int, oy: int) -> None:
+    """A committed LUNGING torso for the strike — silhouette leans into the blow.
+
+    Unlike the seated teardrop, this body is a forward-and-up parallelogram: the
+    haunches stay planted low-left, the spine ramps up to a raised driving
+    shoulder on the upper-right, and the chest thrusts toward the strike. The
+    shape itself says 'thrown forward', so the strike reads even with the paw
+    masked. Key-lit upper-left, Bayer shadow turn on the lower-right flank.
+    """
+    base = oy + 21
+    # Planted rear haunch, low-left (the anchor the lunge pivots on).
+    rect(img, ox + 3, base - 6, ox + 9, base, "fur_mid")
+    rect(img, ox + 3, base - 6, ox + 6, base - 1, "fur_light")   # lit rear flank
+    # Spine ramps UP to a raised driving shoulder on the right (the lunge line).
+    rect(img, ox + 8, base - 8, ox + 14, base, "fur_mid")
+    rect(img, ox + 12, base - 10, ox + 16, base - 3, "fur_mid")  # raised shoulder mass
+    rect(img, ox + 12, base - 10, ox + 14, base - 6, "fur_light")  # lit driving shoulder
+    # Bayer shadow turn on the lower-right flank (mid -> dark) — the body turns.
+    for y in range(base - 4, base + 1):
+        for x in range(ox + 13, ox + 17):
+            px(img, x, y, bayer_pick(x, y, coverage=0.3,
+                                     dark="fur_dark", light="fur_mid"))
+    # Cream chest thrust forward under the raised shoulder.
+    rect(img, ox + 7, base - 5, ox + 12, base, "belly_cream")
+    px(img, ox + 7, base - 5, "fur_mid")
+    # Planted rear paw + a braced front paw (weight forward).
+    rect(img, ox + 4, base, ox + 6, base, "belly_cream")
+    rect(img, ox + 9, base, ox + 11, base, "belly_cream")
+
+
+def _pose_bat_strike() -> Image.Image:
+    """THE contact frame (choreography frame 8): the takedown made visible.
+
+    Billu LUNGES — a forward-leaning torso (custom `_strike_body`, not the seated
+    teardrop) drives a fully-extended foreleg up-and-right to the contact point.
+    The head leads after the paw with ears pinned forward; the tail snaps back as
+    counterbalance. The foreleg is a long clean lit diagonal ending in a rounded
+    paw, with a 1px MOTION-SMEAR streak trailing the tip (the impact). Seen alone,
+    this frame should land as a powerful, intentional swat — the hero verb.
+    """
+    img = new_frame(FRAME, FRAME)
+    ox, oy = 0, 1
+    # Tail snaps back-and-up as counterbalance to the forward lunge (flick hook).
+    _tail(img, ox, oy, "flick")
+    _strike_body(img, ox, oy)
+    # Head leads the strike: driven down-and-right, ears forward, alert eyes.
+    _head(img, ox, oy, alert=True, dx=1, dy=2, ears_forward=True)
+    # The striking foreleg: a long clean diagonal from the thrust chest out to
+    # full reach, up-and-right. Cream underside, fur_light lit top edge. Drawn
+    # LAST so it sits cleanly over the shoulder shadow, never tangled in it.
+    leg = [(12, 18), (13, 17), (14, 16), (15, 15), (16, 14), (17, 13)]
     for (dx, dy) in leg:
         px(img, dx, dy, "belly_cream")
-        px(img, dx + 1, dy, "fur_light")                       # lit upper edge
-    # rounded paw pad at the tip.
-    rect(img, 17, 14, 19, 15, "belly_cream")
-    px(img, 19, 14, "fur_light")
-    px(img, 18, 13, "fur_mid")                                 # toe shadow
-    # re-outline the thrown paw so it crisply separates from the wall behind.
-    for (dx, dy) in [(12, 19), (13, 18), (14, 17), (15, 16), (16, 15),
-                     (17, 13), (20, 14), (20, 15), (19, 16), (18, 16)]:
-        px(img, dx, dy, "outline")
+        px(img, dx, dy - 1, "fur_light")                       # lit upper edge of the leg
+    # Rounded paw pad at full extension (the part that hit the prop) — a clean
+    # solid cream knuckle so the contact point reads crisply, not as noise.
+    rect(img, 17, 12, 19, 13, "belly_cream")
+    px(img, 18, 11, "belly_cream")                             # toe knuckle
+    px(img, 19, 12, "fur_light")                               # lit paw edge
+    # Motion smear: a clean 2px streak trailing the paw tip = the impact streak.
+    px(img, 20, 12, "fur_light")
+    px(img, 21, 12, "fur_mid")
+    _outline_silhouette(img)
+    # AO under the planted lunge base (lower + wider than a seated cat).
+    ambient_occlusion(img, (ox + 3, oy + 20, ox + 14, oy + 21),
+                      contact_edges=(False, False, True, False))
+    assert_on_palette(img)
+    return img
+
+
+def _pose_bat_watch() -> Image.Image:
+    """'Billu watches it fall' (choreography Phase 4): the smug recovery beat.
+
+    The strike has landed; Billu settles back upright and EYE-TRACKS the prop
+    down-right (pupils slid into the corner of the iris), tail rising toward the
+    high 'safe' read, ear nearest the prop tipped forward (interest). The paw is
+    lowered back to a relaxed rest. Reads as a cat calmly observing the chaos he
+    just caused — the delight punctuation, not a game-state signal.
+    """
+    img = _assemble(squash=0, loaf=False, tail_mood="safe", alert=False,
+                    head_dx=1, ears_forward=False, track=1)
+    # Lowered resting paw forward-right (just set down after the swat).
+    rect(img, 12, 20, 14, 21, "belly_cream")
+    px(img, 12, 20, "fur_light")
+    px(img, 14, 21, "outline")
+    px(img, 11, 21, "outline")
     assert_on_palette(img)
     return img
 
@@ -326,8 +507,10 @@ POSES: Dict[str, Callable[[], Image.Image]] = {
     "idle_a": _pose_idle_a,
     "idle_b": _pose_idle_b,
     "loaf": _pose_loaf,
-    "prebat": _pose_prebat,
-    "bat": _pose_bat,
+    "creep": _pose_creep,
+    "bat_windup": _pose_bat_windup,
+    "bat_strike": _pose_bat_strike,
+    "bat_watch": _pose_bat_watch,
 }
 
 # The four tail-mood states = the tail-as-HUD vocabulary. Each is a neutral
@@ -370,18 +553,27 @@ def _grid_sheet(frames: List[Image.Image], factor: int, pad: int = 8) -> Image.I
 
 
 def write_billu_sheets(factor: int = 6) -> List[Path]:
-    """Write the pose sheet, tail-state sheet, and native individuals."""
+    """Write the pose sheet, bat-sequence sheet, tail-state sheet, and natives."""
     # Frame-budget sanity: poses must fit the documented caps.
     assert_within_budget("idle", 2)            # idle_a + idle_b
-    assert_within_budget("bat", 3)             # prebat / bat / (recover folds in)
+    assert_within_budget("bat", 3)             # windup / strike / watch
 
     out: List[Path] = []
 
-    pose_order = ["idle_a", "idle_b", "loaf", "prebat", "bat"]
+    # The four distinct silhouettes — idle (upright), loaf (compact), creep
+    # (stretched low), bat (the strike). Distinct at a glance is the bar.
+    pose_order = ["idle_a", "loaf", "creep", "bat_strike"]
     pose_sheet = _grid_sheet([draw_pose(p) for p in pose_order], factor)
     p1 = PUBLIC / "billu_poses_6x.png"
     pose_sheet.save(p1)
     out.append(p1)
+
+    # The bat hero verb as its 3-frame sequence: wind-up -> strike -> watch.
+    bat_order = ["bat_windup", "bat_strike", "bat_watch"]
+    bat_sheet = _grid_sheet([draw_pose(p) for p in bat_order], factor)
+    pbat = PUBLIC / "billu_bat_sequence_6x.png"
+    bat_sheet.save(pbat)
+    out.append(pbat)
 
     tail_order = ["idle_mid", "alerted", "prebat", "safe_high"]
     tail_sheet = _grid_sheet([draw_tail_state(t) for t in tail_order], factor)
